@@ -54,11 +54,72 @@ class ITEquipmentSerializer(serializers.ModelSerializer):
 
 
 class OfficeAssignmentSerializer(serializers.ModelSerializer):
-    """Serializer for Office Assignment CRUD operations."""
+    """
+    Serializer for Office Assignment CRUD operations.
+
+    Validates that:
+      - The target office has available capacity before allowing a new
+        active assignment (end_date is NULL).
+      - A staff member doesn't already have an active assignment to the
+        same office.
+    """
 
     class Meta:
         model = OfficeAssignment
         fields = '__all__'
+
+    def validate(self, attrs):
+        """
+        Cross-field validation for office capacity and duplicate assignments.
+
+        Raises:
+            serializers.ValidationError: if the office is full or the staff
+            member already has an active assignment in this office.
+        """
+        office = attrs.get('office')
+        staff = attrs.get('staff')
+        end_date = attrs.get('end_date')
+
+        # Only validate capacity for ACTIVE assignments (end_date is None)
+        if office and end_date is None:
+            active_count = OfficeAssignment.objects.filter(
+                office=office,
+                end_date__isnull=True,
+            )
+
+            # On update, exclude the current instance from the count
+            if self.instance:
+                active_count = active_count.exclude(pk=self.instance.pk)
+
+            current_occupants = active_count.count()
+
+            if current_occupants >= office.capacity:
+                raise serializers.ValidationError({
+                    'office': (
+                        f'Office "{office}" is at full capacity '
+                        f'({current_occupants}/{office.capacity}). '
+                        f'Cannot add a new active assignment.'
+                    )
+                })
+
+        # Prevent duplicate active assignments (same staff → same office)
+        if office and staff and end_date is None:
+            duplicate = OfficeAssignment.objects.filter(
+                office=office,
+                staff=staff,
+                end_date__isnull=True,
+            )
+            if self.instance:
+                duplicate = duplicate.exclude(pk=self.instance.pk)
+
+            if duplicate.exists():
+                raise serializers.ValidationError({
+                    'staff': (
+                        f'{staff} already has an active assignment in "{office}".'
+                    )
+                })
+
+        return attrs
 
 
 # ──────────────────────────────────────────────────────────────

@@ -10,6 +10,7 @@ SCRUM-23: ModelViewSets for basic CRUD on all entities.
 
 from django.db.models import Count, Q, F
 from rest_framework import generics, viewsets, filters
+from rest_framework.permissions import AllowAny
 
 from .models import Department, Building, Office, Staff, ITEquipment, OfficeAssignment
 from .serializers import (
@@ -21,6 +22,7 @@ from .serializers import (
     OfficeListSerializer,
     OfficeDetailSerializer,
 )
+from .permissions import IsAdminOrReadOnly
 
 
 # ──────────────────────────────────────────────────────────────
@@ -45,6 +47,7 @@ class OfficeSearchView(generics.ListAPIView):
     """
 
     serializer_class = OfficeListSerializer
+    permission_classes = [AllowAny]
     filter_backends = [filters.SearchFilter, filters.OrderingFilter]
     search_fields = ['room_number', 'building__name', 'office_type']
     ordering_fields = ['room_number', 'floor', 'capacity', 'available_capacity']
@@ -122,6 +125,7 @@ class OfficeDetailView(generics.RetrieveAPIView):
         'it_equipment',
     )
     serializer_class = OfficeDetailSerializer
+    permission_classes = [AllowAny]
     lookup_field = 'pk'
 
 
@@ -130,35 +134,41 @@ class OfficeDetailView(generics.RetrieveAPIView):
 # ──────────────────────────────────────────────────────────────
 
 class DepartmentViewSet(viewsets.ModelViewSet):
-    """CRUD operations for departments."""
+    """CRUD operations for departments. Read-only for non-admins."""
 
     queryset = Department.objects.all()
     serializer_class = DepartmentSerializer
+    permission_classes = [IsAdminOrReadOnly]
 
 
 class BuildingViewSet(viewsets.ModelViewSet):
-    """CRUD operations for buildings."""
+    """CRUD operations for buildings. Read-only for non-admins."""
 
     queryset = Building.objects.all()
     serializer_class = BuildingSerializer
+    permission_classes = [IsAdminOrReadOnly]
 
 
 class StaffViewSet(viewsets.ModelViewSet):
-    """CRUD operations for staff members."""
+    """CRUD operations for staff members. Read-only for non-admins."""
 
     queryset = Staff.objects.select_related('department').all()
     serializer_class = StaffSerializer
+    permission_classes = [IsAdminOrReadOnly]
 
 
 class ITEquipmentViewSet(viewsets.ModelViewSet):
-    """CRUD operations for IT equipment."""
+    """CRUD operations for IT equipment. Read-only for non-admins."""
 
     queryset = ITEquipment.objects.select_related('office').all()
     serializer_class = ITEquipmentSerializer
+    permission_classes = [IsAdminOrReadOnly]
 
 
 class OfficeAssignmentViewSet(viewsets.ModelViewSet):
-    """CRUD operations for office assignments."""
+    """CRUD operations for office assignments. Read-only for non-admins."""
 
     queryset = OfficeAssignment.objects.select_related('office', 'staff').all()
     serializer_class = OfficeAssignmentSerializer
+    permission_classes = [IsAdminOrReadOnly]
+
