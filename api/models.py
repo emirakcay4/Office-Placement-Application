@@ -6,6 +6,7 @@ DBML specification. Each model maps 1-to-1 to a table in the ERD.
 """
 
 from django.db import models
+from django.contrib.auth.models import User
 
 
 class Department(models.Model):
@@ -76,6 +77,7 @@ class Staff(models.Model):
     """
     Represents a faculty member or university staff.
     Linked to a department and assigned a system role for access control.
+    Optionally linked to a Django User for authentication (SCRUM-24).
     """
     SYSTEM_ROLE_CHOICES = [
         ('faculty', 'Faculty / Staff'),
@@ -85,6 +87,15 @@ class Staff(models.Model):
         ('it_department', 'IT Department'),
     ]
 
+    user = models.OneToOneField(
+        User,
+        on_delete=models.CASCADE,
+        related_name='staff_profile',
+        null=True,
+        blank=True,
+        help_text='Linked Django User for authentication. '
+                  'related_name=staff_profile is used by permission classes.',
+    )
     department = models.ForeignKey(
         Department,
         on_delete=models.CASCADE,

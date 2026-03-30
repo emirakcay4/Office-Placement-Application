@@ -10,20 +10,25 @@ For the full list of settings and their values, see
 https://docs.djangoproject.com/en/6.0/ref/settings/
 """
 
+import os
 from pathlib import Path
+from dotenv import load_dotenv
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
+
+# Load environment variables from .env file (SCRUM-26)
+load_dotenv(BASE_DIR / '.env')
 
 
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/6.0/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = 'django-insecure-sr#y@%#dw*aieyf)5tgr+jq_6aft=7_!@*+4-v8l$yz-(d%kj_'
+SECRET_KEY = os.getenv('SECRET_KEY', 'fallback-insecure-key-for-dev')
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+DEBUG = os.getenv('DEBUG', 'False').lower() in ('true', '1', 'yes')
 
 ALLOWED_HOSTS = []
 
@@ -40,6 +45,8 @@ INSTALLED_APPS = [
 
     # Third-party apps
     'rest_framework',
+    'rest_framework_simplejwt',
+    'drf_spectacular',
     'corsheaders',
 
     # Local apps
@@ -83,11 +90,11 @@ WSGI_APPLICATION = 'opa_backend.wsgi.application'
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.postgresql',
-        'NAME': 'opa_db',         # Имя базы, которую ты только что создал
-        'USER': 'postgres',       # Твой суперпользователь
-        'PASSWORD': 'bakuman56pen56', # Впиши сюда пароль, который указывал при установке
-        'HOST': 'localhost',      # База крутится на твоем компе
-        'PORT': '5432',           # Стандартный порт Postgres
+        'NAME': os.getenv('DB_NAME', 'opa_db'),
+        'USER': os.getenv('DB_USER', 'postgres'),
+        'PASSWORD': os.getenv('DB_PASSWORD', ''),
+        'HOST': os.getenv('DB_HOST', 'localhost'),
+        'PORT': os.getenv('DB_PORT', '5432'),
     }
 }
 
@@ -148,4 +155,35 @@ CORS_ALLOW_ALL_ORIGINS = True  # Only for development! Restrict in production.
 REST_FRAMEWORK = {
     'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',
     'PAGE_SIZE': 20,
+    'DEFAULT_AUTHENTICATION_CLASSES': (
+        'rest_framework_simplejwt.authentication.JWTAuthentication',
+    ),
+    'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
+}
+
+
+# ──────────────────────────────────────────────
+# SimpleJWT Settings (SCRUM-24)
+# ──────────────────────────────────────────────
+
+from datetime import timedelta
+
+SIMPLE_JWT = {
+    'ACCESS_TOKEN_LIFETIME': timedelta(minutes=30),
+    'REFRESH_TOKEN_LIFETIME': timedelta(days=1),
+    'ROTATE_REFRESH_TOKENS': False,
+    'AUTH_HEADER_TYPES': ('Bearer',),
+}
+
+
+# ──────────────────────────────────────────────
+# drf-spectacular Settings (SCRUM-25)
+# ──────────────────────────────────────────────
+
+SPECTACULAR_SETTINGS = {
+    'TITLE': 'OPA — Office Placement Application API',
+    'DESCRIPTION': 'REST API for managing faculty office assignments, '
+                   'capacity tracking, and IT equipment across campus buildings.',
+    'VERSION': '1.0.0',
+    'SERVE_INCLUDE_SCHEMA': False,
 }

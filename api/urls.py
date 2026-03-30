@@ -2,6 +2,9 @@
 URL configuration for the OPA API.
 
 Routes:
+  /api/auth/login/           — SCRUM-24: JWT login (get tokens)
+  /api/auth/refresh/         — SCRUM-24: JWT refresh (renew access token)
+  /api/auth/me/              — SCRUM-24: current user profile
   /api/offices/search/       — SCRUM-21: search & filter offices
   /api/offices/<pk>/         — SCRUM-22: office detail with occupants & equipment
   /api/departments/          — SCRUM-23: department CRUD
@@ -13,8 +16,11 @@ Routes:
 
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
+from rest_framework_simplejwt.views import TokenRefreshView
 
 from .views import (
+    CustomTokenObtainPairView,
+    CurrentUserView,
     OfficeSearchView,
     OfficeDetailView,
     DepartmentViewSet,
@@ -33,6 +39,11 @@ router.register(r'equipment', ITEquipmentViewSet, basename='equipment')
 router.register(r'assignments', OfficeAssignmentViewSet, basename='assignment')
 
 urlpatterns = [
+    # SCRUM-24: JWT Authentication
+    path('auth/login/', CustomTokenObtainPairView.as_view(), name='token-obtain-pair'),
+    path('auth/refresh/', TokenRefreshView.as_view(), name='token-refresh'),
+    path('auth/me/', CurrentUserView.as_view(), name='current-user'),
+
     # SCRUM-21: Office search & filter
     path('offices/search/', OfficeSearchView.as_view(), name='office-search'),
 
@@ -42,3 +53,4 @@ urlpatterns = [
     # SCRUM-23: CRUD routes via router
     path('', include(router.urls)),
 ]
+

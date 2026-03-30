@@ -9,8 +9,11 @@ and office assignments so the API endpoints can be tested immediately.
 """
 
 from datetime import date, timedelta
+from django.contrib.auth.models import User
 from django.core.management.base import BaseCommand
 from api.models import Department, Building, Office, Staff, ITEquipment, OfficeAssignment
+
+DEFAULT_PASSWORD = 'testpass123'
 
 
 class Command(BaseCommand):
@@ -108,6 +111,31 @@ class Command(BaseCommand):
             status = '✅ Created' if created else '⏭️  Exists'
             self.stdout.write(f'  {status}: Staff "{member}"')
 
+        # ── Link Staff to Django Users (SCRUM-24) ──
+        self.stdout.write('')
+        self.stdout.write(self.style.WARNING('🔑 Creating User accounts...'))
+        for member in staff_members:
+            username = f'{member.first_name.lower()}.{member.last_name.lower()}'
+            user, user_created = User.objects.get_or_create(
+                username=username,
+                defaults={
+                    'email': member.email,
+                    'first_name': member.first_name,
+                    'last_name': member.last_name,
+                }
+            )
+            if user_created:
+                user.set_password(DEFAULT_PASSWORD)
+                user.save()
+
+            # Link staff to user if not already linked
+            if member.user is None:
+                member.user = user
+                member.save()
+
+            status = '✅ Created' if user_created else '⏭️  Exists'
+            self.stdout.write(f'  {status}: User "{username}" → {member.system_role}')
+
         # ── IT Equipment ──
         equipment_data = [
             {'office': offices[0], 'asset_type': 'computer', 'serial_number': 'PC-ENG-001', 'status': 'active'},
@@ -174,3 +202,14 @@ class Command(BaseCommand):
         self.stdout.write('  Science 310:     capacity=10, occupied=0, available=10 (EMPTY)')
         self.stdout.write('  Business 100:    capacity=3, occupied=1, available=2')
         self.stdout.write('  Business 200:    capacity=1, occupied=0, available=1 (EMPTY)')
+        self.stdout.write('')
+        self.stdout.write(self.style.NOTICE('🔐 Login credentials (SCRUM-24):'))
+        self.stdout.write(f'  Password for all users: {DEFAULT_PASSWORD}')
+        self.stdout.write('  ┌────────────────────┬────────────────────┐')
+        self.stdout.write('  │ Username           │ Role               │')
+        self.stdout.write('  ├────────────────────┼────────────────────┤')
+        for member in staff_members:
+            uname = f'{member.first_name.lower()}.{member.last_name.lower()}'
+            self.stdout.write(f'  │ {uname:<18} │ {member.system_role:<18} │')
+        self.stdout.write('  └────────────────────┴────────────────────┘')
+

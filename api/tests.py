@@ -317,3 +317,114 @@ class OfficeAssignmentValidationTests(BaseTestSetup):
             'start_date': date.today().isoformat(),
         })
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+
+
+class JWTAuthTests(BaseTestSetup):
+    """
+    Tests for SCRUM-24: JWT Authentication.
+
+    Covers:
+      - Login returns access + refresh tokens + staff profile data
+      - Bad credentials get rejected
+      - /me endpoint returns current user profile
+      - Protected endpoints require authentication
+      - Role-based access control works with JWT
+    """
+
+    def setUp(self):
+        """Create User accounts linked to Staff for auth testing."""
+        super().setUp()
+
+        # Create a Django User linked to staff_alice (faculty)
+        self.user_alice = User.objects.create_user(
+            username='alice.johnson',
+            email='alice@test.edu',
+            password='testpass123',
+        )
+        self.staff_alice.user = self.user_alice
+        self.staff_alice.save()
+
+        # Create a system_admin User
+        self.user_admin = User.objects.create_user(
+            username='admin.user',
+            email='admin@test.edu',
+            password='testpass123',
+        )
+        self.staff_admin = Staff.objects.create(
+            department=self.dept,
+            first_name='Admin',
+            last_name='User',
+            email='admin.user@test.edu',
+            system_role='system_admin',
+            user=self.user_admin,
+        )
+
+    def test_login_returns_tokens_and_profile(self):
+        """POST /api/auth/login/ with valid credentials returns tokens + staff data."""
+        response = self.client.post('/api/auth/login/', {
+            'username': 'alice.johnson',
+            'password': 'testpass123',
+        })
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        # Must include tokens
+        self.assertIn('access', response.data)
+        self.assertIn('refresh', response.data)
+        # Must include user info with staff profile
+        self.assertIn('user', response.data)
+        self.assertEqual(response.data['user']['username'], 'alice.johnson')
+        self.assertIsNotNone(response.data['user']['staff_profile'])
+        self.assertEqual(
+            response.data['user']['staff_profile']['system_role'],
+            'faculty',
+        )
+
+    def test_login_bad_credentials(self):
+        """POST /api/auth/login/ with wrong password returns 401."""
+        response = self.client.post('/api/auth/login/', {
+            'username': 'alice.johnson',
+            'password': 'wrong_password',
+        })
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+    def test_me_returns_profile(self):
+        """GET /api/auth/me/ with valid token returns user profile."""
+        self.client.force_authenticate(user=self.user_alice)
+        response = self.client.get('/api/auth/me/')
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data['username'], 'alice.johnson')
+        self.assertIsNotNone(response.data['staff_profile'])
+        self.assertEqual(
+            response.data['staff_profile']['system_role'],
+            'faculty',
+        )
+
+    def test_me_requires_authentication(self):
+        """GET /api/auth/me/ without token returns 401."""
+        response = self.client.get('/api/auth/me/')
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+    def test_protected_endpoint_requires_auth(self):
+        """POST to a protected endpoint without token returns 401."""
+        response = self.client.post('/api/assignments/', {
+            'office': self.office_shared.pk,
+            'staff': self.staff_alice.pk,
+            'start_date': date.today().isoformat(),
+        })
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+    def test_non_admin_cannot_write(self):
+        """Faculty user (non-admin) can read but not create assignments."""
+        self.client.force_authenticate(user=self.user_alice)
+
+        # GET should work (read-only for all authenticated users)
+        response = self.client.get('/api/assignments/')
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+        # POST should fail (faculty is not system_admin)
+        response = self.client.post('/api/assignments/', {
+            'office': self.office_shared.pk,
+            'staff': self.staff_alice.pk,
+            'start_date': date.today().isoformat(),
+        })
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+

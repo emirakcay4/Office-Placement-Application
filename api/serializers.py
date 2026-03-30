@@ -1,12 +1,94 @@
 """
 Serializers for the OPA (Office Placement Application).
 
-Contains both flat serializers (for CRUD operations) and nested
-serializers (for the Office Detail endpoint — SCRUM-22).
+Contains both flat serializers (for CRUD operations), nested
+serializers (for the Office Detail endpoint — SCRUM-22),
+and JWT authentication serializers (SCRUM-24).
 """
 
 from rest_framework import serializers
+from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from .models import Department, Building, Office, Staff, ITEquipment, OfficeAssignment
+
+
+# ──────────────────────────────────────────────────────────────
+# SCRUM-24: JWT Authentication Serializers
+# ──────────────────────────────────────────────────────────────
+
+class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
+    """
+    Custom JWT login serializer that includes staff profile data
+    in the token response. This way the frontend immediately knows
+    the user's role, name, and department after login.
+    """
+
+    def validate(self, attrs):
+        """
+        Authenticate and return tokens + staff profile info.
+
+        Response includes:
+          - access: JWT access token
+          - refresh: JWT refresh token
+          - user: { id, username, staff_profile: { ... } }
+        """
+        data = super().validate(attrs)
+
+        # Add user info to the response
+        user = self.user
+        user_data = {
+            'id': user.id,
+            'username': user.username,
+        }
+
+        # Include staff profile if linked
+        if hasattr(user, 'staff_profile'):
+            profile = user.staff_profile
+            user_data['staff_profile'] = {
+                'id': profile.id,
+                'first_name': profile.first_name,
+                'last_name': profile.last_name,
+                'email': profile.email,
+                'academic_title': profile.academic_title,
+                'system_role': profile.system_role,
+                'department': profile.department.name,
+            }
+        else:
+            user_data['staff_profile'] = None
+
+        data['user'] = user_data
+        return data
+
+
+class CurrentUserSerializer(serializers.Serializer):
+    """
+    Serializer for the /api/auth/me/ endpoint.
+
+    Returns the authenticated user's basic info and their linked
+    staff profile (role, department, etc.).
+    """
+
+    id = serializers.IntegerField()
+    username = serializers.CharField()
+    email = serializers.EmailField()
+    staff_profile = serializers.SerializerMethodField()
+
+    def get_staff_profile(self, obj):
+        """
+        Return the linked staff profile or null if not linked.
+        """
+        if hasattr(obj, 'staff_profile'):
+            profile = obj.staff_profile
+            return {
+                'id': profile.id,
+                'first_name': profile.first_name,
+                'last_name': profile.last_name,
+                'email': profile.email,
+                'academic_title': profile.academic_title,
+                'system_role': profile.system_role,
+                'department_id': profile.department_id,
+                'department_name': profile.department.name,
+            }
+        return None
 
 
 # ──────────────────────────────────────────────────────────────

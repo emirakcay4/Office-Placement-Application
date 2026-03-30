@@ -6,11 +6,15 @@ SCRUM-21: OfficeSearchView — search & filter offices by room_number,
 SCRUM-22: OfficeDetailView — retrieve full details for a single office,
           including current occupants, IT equipment, and capacity status.
 SCRUM-23: ModelViewSets for basic CRUD on all entities.
+SCRUM-24: JWT Authentication views (login, refresh, me).
 """
 
 from django.db.models import Count, Q, F
 from rest_framework import generics, viewsets, filters
-from rest_framework.permissions import AllowAny
+from rest_framework.permissions import AllowAny, IsAuthenticated
+from rest_framework.response import Response
+from rest_framework.views import APIView
+from rest_framework_simplejwt.views import TokenObtainPairView
 
 from .models import Department, Building, Office, Staff, ITEquipment, OfficeAssignment
 from .serializers import (
@@ -21,8 +25,45 @@ from .serializers import (
     OfficeAssignmentSerializer,
     OfficeListSerializer,
     OfficeDetailSerializer,
+    CustomTokenObtainPairSerializer,
+    CurrentUserSerializer,
 )
 from .permissions import IsAdminOrReadOnly
+
+
+# ──────────────────────────────────────────────────────────────
+# SCRUM-24: JWT Authentication Views
+# ──────────────────────────────────────────────────────────────
+
+class CustomTokenObtainPairView(TokenObtainPairView):
+    """
+    [SCRUM-24] Custom login endpoint.
+
+    POST /api/auth/login/ with { "username": "...", "password": "..." }
+
+    Returns JWT tokens (access + refresh) along with the user's
+    staff profile data (role, name, department).
+    """
+
+    serializer_class = CustomTokenObtainPairSerializer
+
+
+class CurrentUserView(APIView):
+    """
+    [SCRUM-24] Returns the authenticated user's profile.
+
+    GET /api/auth/me/
+
+    Requires a valid JWT token in the Authorization header.
+    Returns user info + linked staff profile (role, department, etc.).
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        """Return the current authenticated user's profile."""
+        serializer = CurrentUserSerializer(request.user)
+        return Response(serializer.data)
 
 
 # ──────────────────────────────────────────────────────────────
