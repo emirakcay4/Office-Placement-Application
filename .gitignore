@@ -24,3 +24,6 @@ db.sqlite3-journal
 
 # AI Workspace Rules
 .agents/
+
+# Node
+node_modules/
