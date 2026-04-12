@@ -1,21 +1,45 @@
 # OPA Test Guide
 
-> **Backend URL:** `https://opa-backend.onrender.com`
-> **Swagger UI:** `https://opa-backend.onrender.com/api/docs/`
-> **API Base:** `https://opa-backend.onrender.com/api/`
+> **Environment:** Local (cloud deployment planned for next sprint)
+> **Backend URL:** `http://127.0.0.1:8000`
+> **Swagger UI:** `http://127.0.0.1:8000/api/docs/`
+> **API Base:** `http://127.0.0.1:8000/api/`
 
 ---
 
-## How to Test
+## Setup (One-Time)
 
-1. Open `https://opa-backend.onrender.com/api/docs/` in your browser
-2. Test public endpoints directly (office search, office detail)
-3. For protected endpoints, log in first:
+1. Pull the latest code: `git pull origin main`
+2. Create a virtual environment: `python -m venv venv`
+3. Activate it: `venv\Scripts\activate` (Windows) / `source venv/bin/activate` (Mac)
+4. Install packages: `pip install -r requirements.txt`
+
+## Running Backend Tests
+
+```bash
+python manage.py test api -v 2
+```
+
+Django will create a temporary test database, run all 22 API tests, and print the results. Take a screenshot of the terminal output for documentation.
+
+## Running Backend Server + Swagger UI
+
+1. Terminal 1: `python manage.py runserver`
+2. Open `http://127.0.0.1:8000/api/docs/` in your browser
+3. Test public endpoints directly (office search, office detail)
+4. For protected endpoints, log in first:
    - Click "Try it out" on the `/api/auth/login/` endpoint
    - Send `{ "username": "ivy.anderson", "password": "testpass123" }`
    - Copy the `access` token from the response
-4. Click the **Authorize** button at the top of the page, type `Bearer <token>`
-5. You can now test all CRUD endpoints
+5. Click the **Authorize** button at the top of the page, type `Bearer <token>`
+6. You can now test all CRUD endpoints
+
+## Running Frontend (Optional)
+
+1. Keep backend running in Terminal 1
+2. Terminal 2: `cd frontend` (or `cd opa-frontend`)
+3. Install modules: `npm install`
+4. Start React app: `npm start`
 
 ---
 
