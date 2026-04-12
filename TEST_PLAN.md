@@ -6,60 +6,60 @@
 
 ---
 
-## Nasil Test Edilir
+## How to Test
 
-1. Tarayicida `https://opa-backend.onrender.com/api/docs/` adresini acin
-2. Herkese acik endpointleri dogrudan test edin (ofis arama, detay)
-3. Korunmus endpointler icin once login olun:
-   - `/api/auth/login/` endpointinde "Try it out" tiklayin
-   - `{ "username": "ivy.anderson", "password": "testpass123" }` gonderin
-   - Response'taki `access` token'i kopyalayin
-4. Sayfanin ustundeki **Authorize** butonuna tiklayin, `Bearer <token>` yazin
-5. Artik tum CRUD endpointlerini test edebilirsiniz
-
----
-
-## Test Hesaplari
-
-Tum sifre: **testpass123**
-
-| Username | Role | Yazma Yetkisi |
-|----------|------|---------------|
-| ivy.anderson | system_admin | Evet (tam CRUD) |
-| alice.johnson | faculty | Hayir |
-| bob.smith | department_admin | Hayir |
-| frank.miller | resource_manager | Hayir |
-| henry.taylor | it_department | Hayir |
+1. Open `https://opa-backend.onrender.com/api/docs/` in your browser
+2. Test public endpoints directly (office search, office detail)
+3. For protected endpoints, log in first:
+   - Click "Try it out" on the `/api/auth/login/` endpoint
+   - Send `{ "username": "ivy.anderson", "password": "testpass123" }`
+   - Copy the `access` token from the response
+4. Click the **Authorize** button at the top of the page, type `Bearer <token>`
+5. You can now test all CRUD endpoints
 
 ---
 
-## Ofis Durumu (Seed Data)
+## Test Accounts
 
-| Oda | Bina | Kapasite | Dolu | Bos | Not |
-|-----|------|----------|------|-----|-----|
-| 101 | Engineering | 2 | 2 | 0 | DOLU |
+All passwords: **testpass123**
+
+| Username | Role | Write Access |
+|----------|------|-------------|
+| ivy.anderson | system_admin | Yes (full CRUD) |
+| alice.johnson | faculty | No |
+| bob.smith | department_admin | No |
+| frank.miller | resource_manager | No |
+| henry.taylor | it_department | No |
+
+---
+
+## Office Status (Seed Data)
+
+| Room | Building | Capacity | Occupied | Available | Note |
+|------|----------|----------|----------|-----------|------|
+| 101 | Engineering | 2 | 2 | 0 | FULL |
 | 102 | Engineering | 4 | 2 | 2 | |
-| 201 | Engineering | 6 | 0 | 6 | BOS |
-| 202 | Engineering | 1 | 0 | 1 | Eski atama bitmis |
+| 201 | Engineering | 6 | 0 | 6 | EMPTY |
+| 202 | Engineering | 1 | 0 | 1 | Past assignment ended |
 | 110 | Science Hall | 2 | 1 | 1 | |
-| 210 | Science Hall | 4 | 0 | 4 | BOS |
-| 310 | Science Hall | 10 | 0 | 10 | BOS |
+| 210 | Science Hall | 4 | 0 | 4 | EMPTY |
+| 310 | Science Hall | 10 | 0 | 10 | EMPTY |
 | 100 | Business Center | 3 | 1 | 2 | |
-| 200 | Business Center | 1 | 0 | 1 | BOS |
+| 200 | Business Center | 1 | 0 | 1 | EMPTY |
 
 ---
 
-## API Endpointleri
+## API Endpoints
 
-| Endpoint | Metod | Auth | Aciklama |
-|----------|-------|------|----------|
-| `/api/auth/login/` | POST | Hayir | Login, token al |
-| `/api/auth/refresh/` | POST | Hayir | Token yenile |
-| `/api/auth/me/` | GET | Evet | Profil bilgisi |
-| `/api/offices/search/` | GET | Hayir | Ofis arama (filtreli) |
-| `/api/offices/{id}/` | GET | Hayir | Ofis detay |
-| `/api/departments/` | GET/POST | Evet | Departman CRUD |
-| `/api/buildings/` | GET/POST | Evet | Bina CRUD |
-| `/api/staff/` | GET/POST | Evet | Personel CRUD |
-| `/api/equipment/` | GET/POST | Evet | Ekipman CRUD |
-| `/api/assignments/` | GET/POST | Evet | Atama CRUD |
+| Endpoint | Method | Auth | Description |
+|----------|--------|------|-------------|
+| `/api/auth/login/` | POST | No | Login, get tokens |
+| `/api/auth/refresh/` | POST | No | Refresh token |
+| `/api/auth/me/` | GET | Yes | User profile |
+| `/api/offices/search/` | GET | No | Office search (filtered) |
+| `/api/offices/{id}/` | GET | No | Office detail |
+| `/api/departments/` | GET/POST | Yes | Department CRUD |
+| `/api/buildings/` | GET/POST | Yes | Building CRUD |
+| `/api/staff/` | GET/POST | Yes | Staff CRUD |
+| `/api/equipment/` | GET/POST | Yes | Equipment CRUD |
+| `/api/assignments/` | GET/POST | Yes | Assignment CRUD |
