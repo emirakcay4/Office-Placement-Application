@@ -7,39 +7,58 @@
 
 ---
 
-## Setup (One-Time)
+## Backend Setup (One-Time)
 
 1. Pull the latest code: `git pull origin main`
 2. Create a virtual environment: `python -m venv venv`
 3. Activate it: `venv\Scripts\activate` (Windows) / `source venv/bin/activate` (Mac)
 4. Install packages: `pip install -r requirements.txt`
 
-## Running Backend Tests
+> **Note:** This project normally uses PostgreSQL. For local testing without PostgreSQL, we use `opa_backend/settings_local.py` which switches to SQLite.
+
+## Running Backend Unit Tests (22 tests)
 
 ```bash
-python manage.py test api -v 2
+python manage.py test api --settings=opa_backend.settings_local -v 2
 ```
 
-Django will create a temporary test database, run all 22 API tests, and print the results. Take a screenshot of the terminal output for documentation.
+Django creates a temporary in-memory test database, runs all 22 API tests, and prints the results. Take a screenshot of the terminal output for documentation.
 
 ## Running Backend Server + Swagger UI
 
-1. Terminal 1: `python manage.py runserver`
-2. Open `http://127.0.0.1:8000/api/docs/` in your browser
-3. Test public endpoints directly (office search, office detail)
-4. For protected endpoints, log in first:
+```bash
+python manage.py migrate --settings=opa_backend.settings_local
+python manage.py seed_data --settings=opa_backend.settings_local
+python manage.py runserver --settings=opa_backend.settings_local
+```
+
+1. Open `http://127.0.0.1:8000/api/docs/` in your browser
+2. Test public endpoints directly (office search, office detail)
+3. For protected endpoints, log in first:
    - Click "Try it out" on the `/api/auth/login/` endpoint
    - Send `{ "username": "ivy.anderson", "password": "testpass123" }`
    - Copy the `access` token from the response
-5. Click the **Authorize** button at the top of the page, type `Bearer <token>`
-6. You can now test all CRUD endpoints
+4. Click the **Authorize** button at the top of the page, type `Bearer <token>`
+5. You can now test all CRUD endpoints
 
-## Running Frontend (Optional)
+## Frontend Setup & Testing
 
-1. Keep backend running in Terminal 1
-2. Terminal 2: `cd frontend` (or `cd opa-frontend`)
-3. Install modules: `npm install`
-4. Start React app: `npm start`
+```bash
+cd opa-frontend
+npm install
+```
+
+### Run frontend unit tests (7 tests)
+
+```bash
+npm test -- --watchAll=false
+```
+
+### Run frontend app (manual UI testing)
+
+1. Terminal 1: backend running (see above)
+2. Terminal 2: `cd opa-frontend` then `npm start`
+3. Open `http://localhost:3000` and log in with `ivy.anderson` / `testpass123`
 
 ---
 
