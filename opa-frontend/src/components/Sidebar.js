@@ -1,6 +1,7 @@
 import React from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useDarkMode } from '../context/DarkModeContext';
+import { useAuth } from '../context/AuthContext';
 
 const navItems = [
   { label: 'Dashboard',     path: '/dashboard', icon: (
@@ -54,6 +55,12 @@ export default function Sidebar() {
   const navigate = useNavigate();
   const location = useLocation();
   const { darkMode } = useDarkMode();
+  const { user } = useAuth();
+
+  const isSysAdmin = user?.staff_profile?.system_role === 'system_admin';
+  const visibleNavItems = navItems.filter(item => 
+    item.path === '/admin' ? isSysAdmin : true
+  );
 
   const bg           = darkMode ? '#0A1F38' : '#FFFFFF';
   const border       = darkMode ? 'rgba(255,255,255,0.06)' : '#E2EAF4';
@@ -74,7 +81,7 @@ export default function Sidebar() {
           <span style={{ fontSize: '10px', fontFamily: 'Sora, sans-serif', fontWeight: '600', color: inactiveText, letterSpacing: '1px', textTransform: 'uppercase' }}>Navigation</span>
         </div>
         <nav style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-          {navItems.map((item) => {
+          {visibleNavItems.map((item) => {
             const isActive = location.pathname === item.path;
             return (
               <button key={item.path} onClick={() => navigate(item.path)} style={{
