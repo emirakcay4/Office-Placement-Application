@@ -48,6 +48,7 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
                 'first_name': profile.first_name,
                 'last_name': profile.last_name,
                 'email': profile.email,
+                'phone_number': profile.phone_number,
                 'academic_title': profile.academic_title,
                 'system_role': profile.system_role,
                 'department': profile.department.name,
@@ -83,6 +84,7 @@ class CurrentUserSerializer(serializers.Serializer):
                 'first_name': profile.first_name,
                 'last_name': profile.last_name,
                 'email': profile.email,
+                'phone_number': profile.phone_number,
                 'academic_title': profile.academic_title,
                 'system_role': profile.system_role,
                 'department_id': profile.department_id,
@@ -122,7 +124,7 @@ class StaffSerializer(serializers.ModelSerializer):
         model = Staff
         fields = [
             'id', 'department', 'department_name',
-            'first_name', 'last_name', 'email',
+            'first_name', 'last_name', 'email', 'phone_number',
             'academic_title', 'system_role',
         ]
 
@@ -248,7 +250,7 @@ class StaffBriefSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Staff
-        fields = ['id', 'full_name', 'email', 'academic_title', 'system_role']
+        fields = ['id', 'full_name', 'email', 'phone_number', 'academic_title', 'system_role']
 
     def get_full_name(self, obj):
         """Return formatted full name with academic title."""

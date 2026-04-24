@@ -1,44 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import Layout from '../components/Layout';
 import { useDarkMode } from '../context/DarkModeContext';
-
-const mockOfficeDetails = {
-  AS139: { occupants: 1, capacity: 2, status: 'available',    people: ['Dr. Ayse Kaya'] },
-  AS140: { occupants: 2, capacity: 2, status: 'occupied',     people: ['Prof. Mehmet Yilmaz', 'Dr. Elif Demir'] },
-  AS111: { occupants: 0, capacity: 2, status: 'available',    people: [] },
-  AS112: { occupants: 1, capacity: 2, status: 'available',    people: ['Dr. Selin Arslan'] },
-  AS113: { occupants: 2, capacity: 2, status: 'occupied',     people: ['Prof. Hasan Celik', 'Dr. Mert Koc'] },
-  AS114: { occupants: 1, capacity: 1, status: 'occupied',     people: ['Dr. Can Ozturk'] },
-  AS115: { occupants: 0, capacity: 2, status: 'available',    people: [] },
-  AS116: { occupants: 1, capacity: 2, status: 'available',    people: ['Dr. Zeynep Sahin'] },
-  AS117: { occupants: 2, capacity: 2, status: 'occupied',     people: ['Prof. Ali Yilmaz', 'Dr. Fatma Kurt'] },
-  AS118: { occupants: 3, capacity: 2, status: 'overcapacity', people: ['Dr. Ahmet Demir', 'Prof. Selin Kaya', 'Dr. Murat Oz'] },
-  AS119: { occupants: 1, capacity: 2, status: 'available',    people: ['Dr. Elif Celik'] },
-  AS120: { occupants: 2, capacity: 2, status: 'occupied',     people: ['Prof. Mehmet Arslan', 'Dr. Ayse Yildiz'] },
-  AS121: { occupants: 0, capacity: 2, status: 'available',    people: [] },
-  AS122: { occupants: 1, capacity: 2, status: 'available',    people: ['Dr. Can Kaya'] },
-  AS123: { occupants: 2, capacity: 2, status: 'occupied',     people: ['Prof. Zeynep Demir', 'Dr. Ali Koc'] },
-  AS123A:{ occupants: 0, capacity: 1, status: 'available',    people: [] },
-  AS124: { occupants: 1, capacity: 2, status: 'available',    people: ['Dr. Hasan Yilmaz'] },
-  AS125: { occupants: 2, capacity: 2, status: 'occupied',     people: ['Prof. Fatma Arslan', 'Dr. Mert Celik'] },
-  AS126: { occupants: 1, capacity: 2, status: 'available',    people: ['Dr. Selin Ozturk'] },
-  AS127: { occupants: 0, capacity: 2, status: 'available',    people: [] },
-  AS128: { occupants: 1, capacity: 2, status: 'available',    people: ['Dr. Ahmet Kaya'] },
-  AS129: { occupants: 2, capacity: 2, status: 'occupied',     people: ['Prof. Elif Yilmaz', 'Dr. Can Demir'] },
-  AS130: { occupants: 1, capacity: 2, status: 'available',    people: ['Dr. Murat Arslan'] },
-  AS131: { occupants: 0, capacity: 2, status: 'available',    people: [] },
-  AS132: { occupants: 2, capacity: 2, status: 'occupied',     people: ['Prof. Zeynep Koc', 'Dr. Ali Celik'] },
-  AS133: { occupants: 1, capacity: 2, status: 'available',    people: ['Dr. Fatma Yildiz'] },
-  AS134: { occupants: 3, capacity: 2, status: 'overcapacity', people: ['Prof. Hasan Kaya', 'Dr. Selin Demir', 'Dr. Mert Yilmaz'] },
-  AS135: { occupants: 1, capacity: 2, status: 'available',    people: ['Dr. Ayse Arslan'] },
-  AS136: { occupants: 2, capacity: 2, status: 'occupied',     people: ['Prof. Can Ozturk', 'Dr. Zeynep Kurt'] },
-  AS137: { occupants: 0, capacity: 2, status: 'available',    people: [] },
-  AS138: { occupants: 1, capacity: 2, status: 'available',    people: ['Dr. Elif Koc'] },
-  AS144: { occupants: 2, capacity: 2, status: 'occupied',     people: ['Prof. Ahmet Celik', 'Dr. Murat Yildiz'] },
-  AS141: { occupants: 1, capacity: 2, status: 'available',    people: ['Dr. Fatma Kaya'] },
-  AS142: { occupants: 2, capacity: 2, status: 'occupied',     people: ['Prof. Hasan Arslan', 'Dr. Selin Kurt'] },
-  AS143: { occupants: 0, capacity: 1, status: 'available',    people: [] },
-};
+import client from '../api/client';
 
 const STATUS = {
   available:    { fill: '#10B981', fillOp: 0.22, stroke: '#059669', label: 'Available',     text: '#059669', bg: '#ECFDF5', border: '#6EE7B7' },
@@ -49,8 +12,8 @@ const STATUS = {
 
 const AVATAR_COLORS = ['#2563EB', '#059669', '#7C3AED', '#B45309', '#0891B2', '#DC2626'];
 
-function useOfficeStyle(id, selectedOffice) {
-  const detail = mockOfficeDetails[id];
+function useOfficeStyle(id, selectedOffice, officeDetails) {
+  const detail = officeDetails && officeDetails[id] ? officeDetails[id] : null;
   const st     = detail ? STATUS[detail.status] : STATUS.unknown;
   const isSel  = selectedOffice === id;
   return {
@@ -67,8 +30,8 @@ function useOfficeStyle(id, selectedOffice) {
   };
 }
 
-function OfficeRoom({ id, x, y, w, h, selectedOffice, onOfficeClick, fontSize = 8 }) {
-  const { rectProps, textColor } = useOfficeStyle(id, selectedOffice);
+function OfficeRoom({ id, x, y, w, h, selectedOffice, onOfficeClick, fontSize = 8, officeDetails }) {
+  const { rectProps, textColor } = useOfficeStyle(id, selectedOffice, officeDetails);
   return (
     <g onClick={e => onOfficeClick(id, e)} style={{ cursor: 'pointer' }}>
       <rect x={x} y={y} width={w} height={h} {...rectProps} />
@@ -93,26 +56,26 @@ function Room({ label, x, y, w, h, fill, textFill, fontSize = 8.5, darkMode }) {
   );
 }
 
-function FloorZemin({ onOfficeClick, selectedOffice, darkMode }) {
+function FloorZemin({ onOfficeClick, selectedOffice, darkMode, officeDetails }) {
   const wc  = darkMode ? '#2A4A6A' : '#B8CCE0';
   const cor = darkMode ? '#0A1E36' : '#EEF4FB';
   return (
     <svg width="100%" viewBox="0 0 420 600" style={{ display: 'block' }}>
       <rect x="8" y="8" width="404" height="584" rx="8" fill={cor} stroke={wc} strokeWidth="2"/>
       <Room label="General Accounting" x={16} y={16} w={150} h={44} darkMode={darkMode} fontSize={7.5}/>
-      <Room label="CR128" x={16} y={62} w={150} h={80} darkMode={darkMode}/>
-      <Room label="CR127" x={16} y={144} w={150} h={80} darkMode={darkMode}/>
-      <Room label="CR126" x={16} y={226} w={150} h={80} darkMode={darkMode}/>
-      <Room label="CR125" x={16} y={308} w={150} h={80} darkMode={darkMode}/>
-      <Room label="CR124" x={16} y={390} w={150} h={80} darkMode={darkMode}/>
-      <OfficeRoom id="AS139" x={168} y={16} w={58} h={44} selectedOffice={selectedOffice} onOfficeClick={onOfficeClick}/>
-      <OfficeRoom id="AS140" x={228} y={16} w={58} h={44} selectedOffice={selectedOffice} onOfficeClick={onOfficeClick}/>
-      <Room label="CR120" x={288} y={16} w={124} h={80} darkMode={darkMode}/>
-      <Room label="CR121" x={288} y={98} w={124} h={80} darkMode={darkMode}/>
-      <Room label="CR122" x={288} y={180} w={124} h={80} darkMode={darkMode}/>
-      <Room label="CR123" x={288} y={262} w={124} h={80} darkMode={darkMode}/>
+      <OfficeRoom officeDetails={officeDetails} id="CR128" x={16} y={62} w={150} h={80} selectedOffice={selectedOffice} onOfficeClick={onOfficeClick}/>
+      <OfficeRoom officeDetails={officeDetails} id="CR127" x={16} y={144} w={150} h={80} selectedOffice={selectedOffice} onOfficeClick={onOfficeClick}/>
+      <OfficeRoom officeDetails={officeDetails} id="CR126" x={16} y={226} w={150} h={80} selectedOffice={selectedOffice} onOfficeClick={onOfficeClick}/>
+      <OfficeRoom officeDetails={officeDetails} id="CR125" x={16} y={308} w={150} h={80} selectedOffice={selectedOffice} onOfficeClick={onOfficeClick}/>
+      <OfficeRoom officeDetails={officeDetails} id="CR124" x={16} y={390} w={150} h={80} selectedOffice={selectedOffice} onOfficeClick={onOfficeClick}/>
+      <OfficeRoom officeDetails={officeDetails} id="AS139" x={168} y={16} w={58} h={44} selectedOffice={selectedOffice} onOfficeClick={onOfficeClick}/>
+      <OfficeRoom officeDetails={officeDetails} id="AS140" x={228} y={16} w={58} h={44} selectedOffice={selectedOffice} onOfficeClick={onOfficeClick}/>
+      <OfficeRoom officeDetails={officeDetails} id="CR120" x={288} y={16} w={124} h={80} selectedOffice={selectedOffice} onOfficeClick={onOfficeClick}/>
+      <OfficeRoom officeDetails={officeDetails} id="CR121" x={288} y={98} w={124} h={80} selectedOffice={selectedOffice} onOfficeClick={onOfficeClick}/>
+      <OfficeRoom officeDetails={officeDetails} id="CR122" x={288} y={180} w={124} h={80} selectedOffice={selectedOffice} onOfficeClick={onOfficeClick}/>
+      <OfficeRoom officeDetails={officeDetails} id="CR123" x={288} y={262} w={124} h={80} selectedOffice={selectedOffice} onOfficeClick={onOfficeClick}/>
       <Room label="Final Cafe" x={288} y={344} w={124} h={65} fill={darkMode ? 'rgba(254,243,199,0.15)' : '#FEF9C3'} textFill={darkMode ? '#FCD34D' : '#92400E'} darkMode={darkMode}/>
-      <Room label="CR129" x={168} y={62} w={118} h={80} darkMode={darkMode}/>
+      <OfficeRoom officeDetails={officeDetails} id="CR129" x={168} y={62} w={118} h={80} selectedOffice={selectedOffice} onOfficeClick={onOfficeClick}/>
       <rect x={168} y={144} width={118} height={130} fill={cor} stroke={wc} strokeWidth="0.8" strokeDasharray="4,3" rx="3"/>
       <text x={227} y={212} textAnchor="middle" fontSize={8} fill={darkMode ? '#2A4A6A' : '#A8C0D8'} fontFamily="Nunito,sans-serif">Open Gallery</text>
       <Room label="Storage" x={168} y={276} w={118} h={55} darkMode={darkMode} fontSize={7.5}/>
@@ -130,7 +93,7 @@ function FloorZemin({ onOfficeClick, selectedOffice, darkMode }) {
   );
 }
 
-function Floor1({ onOfficeClick, selectedOffice, darkMode }) {
+function Floor1({ onOfficeClick, selectedOffice, darkMode, officeDetails }) {
   const wc  = darkMode ? '#2A4A6A' : '#B8CCE0';
   const cor = darkMode ? '#0A1E36' : '#EEF4FB';
   const rh = 28, gap = 2, step = rh + gap;
@@ -141,14 +104,14 @@ function Floor1({ onOfficeClick, selectedOffice, darkMode }) {
   return (
     <svg width="100%" viewBox="0 0 340 890" style={{ display: 'block' }}>
       <rect x="4" y="4" width="332" height="882" rx="8" fill={cor} stroke={wc} strokeWidth="2"/>
-      <OfficeRoom id="AS144" x={12} y={12} w={52} h={26} selectedOffice={selectedOffice} onOfficeClick={onOfficeClick} fontSize={7.5}/>
+      <OfficeRoom officeDetails={officeDetails} id="AS144" x={12} y={12} w={52} h={26} selectedOffice={selectedOffice} onOfficeClick={onOfficeClick} fontSize={7.5}/>
       <Room label="Nursing Lab" x={68} y={12} w={110} h={46} darkMode={darkMode} fontSize={7}/>
-      <Room label="CR132" x={182} y={12} w={154} h={46} darkMode={darkMode}/>
-      <Room label="CR136" x={12} y={40} w={52} h={64} darkMode={darkMode}/>
-      <Room label="CR135" x={12} y={106} w={52} h={64} darkMode={darkMode}/>
-      <Room label="CR134" x={12} y={172} w={52} h={64} darkMode={darkMode}/>
-      <Room label="CR130" x={182} y={60} w={154} h={64} darkMode={darkMode}/>
-      <Room label="CR131" x={182} y={126} w={154} h={64} darkMode={darkMode}/>
+      <OfficeRoom officeDetails={officeDetails} id="CR132" x={182} y={12} w={154} h={46} selectedOffice={selectedOffice} onOfficeClick={onOfficeClick} fontSize={7.5}/>
+      <OfficeRoom officeDetails={officeDetails} id="CR136" x={12} y={40} w={52} h={64} selectedOffice={selectedOffice} onOfficeClick={onOfficeClick} fontSize={7.5}/>
+      <OfficeRoom officeDetails={officeDetails} id="CR135" x={12} y={106} w={52} h={64} selectedOffice={selectedOffice} onOfficeClick={onOfficeClick} fontSize={7.5}/>
+      <OfficeRoom officeDetails={officeDetails} id="CR134" x={12} y={172} w={52} h={64} selectedOffice={selectedOffice} onOfficeClick={onOfficeClick} fontSize={7.5}/>
+      <OfficeRoom officeDetails={officeDetails} id="CR130" x={182} y={60} w={154} h={64} selectedOffice={selectedOffice} onOfficeClick={onOfficeClick} fontSize={7.5}/>
+      <OfficeRoom officeDetails={officeDetails} id="CR131" x={182} y={126} w={154} h={64} selectedOffice={selectedOffice} onOfficeClick={onOfficeClick} fontSize={7.5}/>
       <Room label="WC" x={250} y={192} w={58} h={28} darkMode={darkMode} fontSize={8}/>
       <Room label="WC" x={250} y={222} w={58} h={28} darkMode={darkMode} fontSize={8}/>
       <rect x={68} y={60} width={110} height={148} fill={cor} stroke={wc} strokeWidth="0.8" strokeDasharray="4,3" rx="3"/>
@@ -158,22 +121,22 @@ function Floor1({ onOfficeClick, selectedOffice, darkMode }) {
       <Room label="Board of Trustees" x={68} y={222} w={58} h={28} darkMode={darkMode} fontSize={5.5}/>
       <Room label="Guidance" x={68} y={252} w={58} h={28} darkMode={darkMode} fontSize={6}/>
       <Room label="Academic Coord." x={68} y={282} w={58} h={28} darkMode={darkMode} fontSize={5.5}/>
-      <OfficeRoom id="AS123A" x={68}  y={314} w={58} h={26} selectedOffice={selectedOffice} onOfficeClick={onOfficeClick} fontSize={7}/>
-      <OfficeRoom id="AS136"  x={130} y={314} w={76} h={26} selectedOffice={selectedOffice} onOfficeClick={onOfficeClick} fontSize={7.5}/>
-      <OfficeRoom id="AS138"  x={210} y={300} w={58} h={26} selectedOffice={selectedOffice} onOfficeClick={onOfficeClick} fontSize={7.5}/>
-      <OfficeRoom id="AS137"  x={272} y={300} w={58} h={26} selectedOffice={selectedOffice} onOfficeClick={onOfficeClick} fontSize={7.5}/>
+      <OfficeRoom officeDetails={officeDetails} id="AS123A" x={68}  y={314} w={58} h={26} selectedOffice={selectedOffice} onOfficeClick={onOfficeClick} fontSize={7}/>
+      <OfficeRoom officeDetails={officeDetails} id="AS136"  x={130} y={314} w={76} h={26} selectedOffice={selectedOffice} onOfficeClick={onOfficeClick} fontSize={7.5}/>
+      <OfficeRoom officeDetails={officeDetails} id="AS138"  x={210} y={300} w={58} h={26} selectedOffice={selectedOffice} onOfficeClick={onOfficeClick} fontSize={7.5}/>
+      <OfficeRoom officeDetails={officeDetails} id="AS137"  x={272} y={300} w={58} h={26} selectedOffice={selectedOffice} onOfficeClick={onOfficeClick} fontSize={7.5}/>
       {leftIds.map((id, i) => (
-        <OfficeRoom key={id} id={id} x={lx}  y={ly0 + i*step} w={58} h={rh} selectedOffice={selectedOffice} onOfficeClick={onOfficeClick} fontSize={7.5}/>
+        <OfficeRoom officeDetails={officeDetails} key={id} id={id} x={lx}  y={ly0 + i*step} w={58} h={rh} selectedOffice={selectedOffice} onOfficeClick={onOfficeClick} fontSize={7.5}/>
       ))}
       {midLIds.map((id, i) => (
-        <OfficeRoom key={id} id={id} x={mlx} y={ly0 + i*step} w={58} h={rh} selectedOffice={selectedOffice} onOfficeClick={onOfficeClick} fontSize={7.5}/>
+        <OfficeRoom officeDetails={officeDetails} key={id} id={id} x={mlx} y={ly0 + i*step} w={58} h={rh} selectedOffice={selectedOffice} onOfficeClick={onOfficeClick} fontSize={7.5}/>
       ))}
       <rect x={kor} y={ly0} width={66} height={5*step+rh} fill={cor} stroke={wc} strokeWidth="0.8" strokeDasharray="3,2" rx="2"/>
       {midRIds.map((id, i) => (
-        <OfficeRoom key={id} id={id} x={mrx} y={ly0 + i*step} w={58} h={rh} selectedOffice={selectedOffice} onOfficeClick={onOfficeClick} fontSize={7.5}/>
+        <OfficeRoom officeDetails={officeDetails} key={id} id={id} x={mrx} y={ly0 + i*step} w={58} h={rh} selectedOffice={selectedOffice} onOfficeClick={onOfficeClick} fontSize={7.5}/>
       ))}
-      <OfficeRoom id="AS135" x={rx2} y={ly0 + 2*step} w={58} h={rh} selectedOffice={selectedOffice} onOfficeClick={onOfficeClick} fontSize={7.5}/>
-      <OfficeRoom id="AS134" x={rx2} y={ly0 + 3*step} w={58} h={rh} selectedOffice={selectedOffice} onOfficeClick={onOfficeClick} fontSize={7.5}/>
+      <OfficeRoom officeDetails={officeDetails} id="AS135" x={rx2} y={ly0 + 2*step} w={58} h={rh} selectedOffice={selectedOffice} onOfficeClick={onOfficeClick} fontSize={7.5}/>
+      <OfficeRoom officeDetails={officeDetails} id="AS134" x={rx2} y={ly0 + 3*step} w={58} h={rh} selectedOffice={selectedOffice} onOfficeClick={onOfficeClick} fontSize={7.5}/>
       <Room label="IT Centre" x={mrx} y={ly0 + 6*step + 2} w={58} h={rh} fill={darkMode ? 'rgba(220,252,231,0.1)' : '#DCFCE7'} textFill={darkMode ? '#4ADE80' : '#166534'} darkMode={darkMode} fontSize={7}/>
       <rect x={kor} y={ly0 + 6*step + 32} width={66} height={90} fill={cor} stroke={wc} strokeWidth="0.8" strokeDasharray="3,2" rx="2"/>
       <text x={kor+33} y={ly0 + 6*step + 80} textAnchor="middle" fontSize={7} fill={darkMode ? '#2A4A6A' : '#A8C0D8'} fontFamily="Nunito,sans-serif">Open Gallery</text>
@@ -186,7 +149,7 @@ function Floor1({ onOfficeClick, selectedOffice, darkMode }) {
   );
 }
 
-function Floor2({ onOfficeClick, selectedOffice, darkMode }) {
+function Floor2({ onOfficeClick, selectedOffice, darkMode, officeDetails }) {
   const wc  = darkMode ? '#2A4A6A' : '#B8CCE0';
   const cor = darkMode ? '#0A1E36' : '#EEF4FB';
   const adm = darkMode ? 'rgba(109,40,217,0.12)' : '#EDE9FE';
@@ -202,7 +165,7 @@ function Floor2({ onOfficeClick, selectedOffice, darkMode }) {
     <svg width="100%" viewBox="0 0 420 720" style={{ display: 'block' }}>
       <rect x="8" y="8" width="404" height="704" rx="8" fill={cor} stroke={wc} strokeWidth="2"/>
       {topRooms.map(([l,x,y,rw,rh]) => (
-        <Room key={l} label={l} x={x} y={y} w={rw} h={rh} darkMode={darkMode}/>
+        <OfficeRoom officeDetails={officeDetails} key={l} id={l} x={x} y={y} w={rw} h={rh} selectedOffice={selectedOffice} onOfficeClick={onOfficeClick} fontSize={7.5}/>
       ))}
       <rect x={94} y={140} width={166} height={150} fill={cor} stroke={wc} strokeWidth="0.8" strokeDasharray="4,3" rx="3"/>
       <text x={177} y={218} textAnchor="middle" fontSize={8.5} fill={darkMode ? '#2A4A6A' : '#A8C0D8'} fontFamily="Nunito,sans-serif">Open Gallery</text>
@@ -213,9 +176,9 @@ function Floor2({ onOfficeClick, selectedOffice, darkMode }) {
       <text x={253} y={458} textAnchor="middle" fontSize={10} fill={darkMode ? '#4ADE80' : '#166534'} fontFamily="Nunito,sans-serif" fontWeight="700">TERRACE / TERAS</text>
       <rect x={94} y={492} width={318} height={200} rx="5" fill={adm} stroke={darkMode ? '#7C3AED' : '#A78BFA'} strokeWidth="1.2"/>
       <text x={253} y={512} textAnchor="middle" fontSize={7.5} fill={darkMode ? '#C4B5FD' : '#5B21B6'} fontFamily="Nunito,sans-serif" fontWeight="700">University Administration / Üniversite Yönetimi</text>
-      <OfficeRoom id="AS141" x={250} y={520} w={154} h={36} selectedOffice={selectedOffice} onOfficeClick={onOfficeClick}/>
-      <OfficeRoom id="AS142" x={250} y={560} w={154} h={36} selectedOffice={selectedOffice} onOfficeClick={onOfficeClick}/>
-      <OfficeRoom id="AS143" x={250} y={600} w={154} h={36} selectedOffice={selectedOffice} onOfficeClick={onOfficeClick}/>
+      <OfficeRoom officeDetails={officeDetails} id="AS141" x={250} y={520} w={154} h={36} selectedOffice={selectedOffice} onOfficeClick={onOfficeClick}/>
+      <OfficeRoom officeDetails={officeDetails} id="AS142" x={250} y={560} w={154} h={36} selectedOffice={selectedOffice} onOfficeClick={onOfficeClick}/>
+      <OfficeRoom officeDetails={officeDetails} id="AS143" x={250} y={600} w={154} h={36} selectedOffice={selectedOffice} onOfficeClick={onOfficeClick}/>
       <Room label="Senate" x={100} y={520} w={80} h={45} darkMode={darkMode} fontSize={7.5}/>
       <Room label="General Secretary" x={100} y={567} w={80} h={40} darkMode={darkMode} fontSize={6.5}/>
       <Room label="Board of Trustees" x={100} y={609} w={80} h={40} darkMode={darkMode} fontSize={6.5}/>
@@ -289,6 +252,62 @@ export default function OfficeMap() {
   const [selectedFloor,  setSelectedFloor]  = useState('1');
   const [selectedOffice, setSelectedOffice] = useState(null);
   const [popupData,      setPopupData]      = useState(null);
+  const [officeDetails,  setOfficeDetails]  = useState({});
+  const [loading,        setLoading]        = useState(true);
+
+  useEffect(() => {
+    const fetchData = async () => {
+      try {
+        setLoading(true);
+        const [officesRes, assignRes, staffRes] = await Promise.all([
+          client.get('/offices/search/'),
+          client.get('/assignments/'),
+          client.get('/staff/')
+        ]);
+        
+        const offData = officesRes.data.results || officesRes.data;
+        const assignData = assignRes.data.results || assignRes.data;
+        const staffData = staffRes.data.results || staffRes.data;
+        
+        const staffMap = {};
+        staffData.forEach(s => { staffMap[s.id] = s; });
+        
+        const activeAssignments = assignData.filter(a => !a.end_date);
+        
+        const assignByOffice = {};
+        activeAssignments.forEach(a => {
+          if (!assignByOffice[a.office]) assignByOffice[a.office] = [];
+          const p = staffMap[a.staff] || {};
+          const title = p.academic_title ? p.academic_title + ' ' : '';
+          const name = `${title}${p.first_name || ''} ${p.last_name || ''}`.trim();
+          assignByOffice[a.office].push(name || 'Unknown');
+        });
+        
+        const details = {};
+        offData.forEach(o => {
+          let status = 'available';
+          const occupants = o.current_occupants_count || 0;
+          if (occupants > o.capacity) status = 'overcapacity';
+          else if (occupants === o.capacity) status = 'occupied';
+          else if (occupants > 0) status = 'available';
+          
+          details[o.room_number] = {
+            occupants: occupants,
+            capacity: o.capacity,
+            status: status,
+            people: assignByOffice[o.id] || []
+          };
+        });
+        
+        setOfficeDetails(details);
+      } catch (err) {
+        console.error("Failed to fetch map data", err);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchData();
+  }, []);
 
   const t = darkMode ? {
     surface:    '#0D2640',
@@ -331,13 +350,14 @@ export default function OfficeMap() {
     const svgEl = e.currentTarget.closest('svg');
     const rect  = svgEl ? svgEl.getBoundingClientRect() : { left: 0, top: 0 };
     setSelectedOffice(id);
-    setPopupData({ id, detail: mockOfficeDetails[id], x: e.clientX - rect.left, y: e.clientY - rect.top });
+    const detail = officeDetails[id] || { occupants: 0, capacity: 2, status: 'available', people: [] };
+    setPopupData({ id, detail: detail, x: e.clientX - rect.left, y: e.clientY - rect.top });
   };
 
   const statusInfo = popupData?.detail ? STATUS[popupData.detail.status] : null;
 
   // Summary counts
-  const allDetails = Object.values(mockOfficeDetails);
+  const allDetails = Object.values(officeDetails);
   const counts = {
     available:    allDetails.filter(d => d.status === 'available').length,
     occupied:     allDetails.filter(d => d.status === 'occupied').length,
@@ -397,9 +417,9 @@ export default function OfficeMap() {
           {/* Map area */}
           <div style={{ position: 'relative', maxWidth: '520px', margin: '0 auto', padding: '24px 20px' }}>
             {selectedFloor === '-1' && <FloorMinus1 darkMode={darkMode}/>}
-            {selectedFloor === '0'  && <FloorZemin  onOfficeClick={handleOfficeClick} selectedOffice={selectedOffice} darkMode={darkMode}/>}
-            {selectedFloor === '1'  && <Floor1      onOfficeClick={handleOfficeClick} selectedOffice={selectedOffice} darkMode={darkMode}/>}
-            {selectedFloor === '2'  && <Floor2      onOfficeClick={handleOfficeClick} selectedOffice={selectedOffice} darkMode={darkMode}/>}
+            {selectedFloor === '0'  && <FloorZemin  onOfficeClick={handleOfficeClick} selectedOffice={selectedOffice} darkMode={darkMode} officeDetails={officeDetails}/>}
+            {selectedFloor === '1'  && <Floor1      onOfficeClick={handleOfficeClick} selectedOffice={selectedOffice} darkMode={darkMode} officeDetails={officeDetails}/>}
+            {selectedFloor === '2'  && <Floor2      onOfficeClick={handleOfficeClick} selectedOffice={selectedOffice} darkMode={darkMode} officeDetails={officeDetails}/>}
 
             {/* ── Popup ── */}
             {popupData && statusInfo && (

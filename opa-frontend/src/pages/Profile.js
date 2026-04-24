@@ -45,6 +45,32 @@ export default function Profile() {
   const [officeHistory, setOfficeHistory] = useState([]);
   const [equipmentRequests, setEquipmentRequests] = useState([]); // Placeholder
   const [loading, setLoading] = useState(true);
+  
+  const [isEditing, setIsEditing] = useState(false);
+  const [editForm, setEditForm] = useState({ phone_number: '' });
+  const [saveStatus, setSaveStatus] = useState('');
+
+  const handleEditClick = () => {
+    setEditForm({ phone_number: user.staff_profile?.phone_number || '' });
+    setIsEditing(true);
+  };
+
+  const handleSaveProfile = async () => {
+    try {
+      setSaveStatus('Saving...');
+      await client.patch(`/staff/${user.staff_profile.id}/`, editForm);
+      setSaveStatus('Saved!');
+      setTimeout(() => {
+        setIsEditing(false);
+        setSaveStatus('');
+        window.location.reload();
+      }, 800);
+    } catch (err) {
+      console.error(err);
+      setSaveStatus('Error saving');
+      setTimeout(() => setSaveStatus(''), 3000);
+    }
+  };
 
   useEffect(() => {
     const fetchProfileData = async () => {
@@ -108,7 +134,7 @@ export default function Profile() {
     email: user.email || user.staff_profile?.email || 'No email',
     systemRole: user.staff_profile?.system_role || 'faculty',
     department: user.staff_profile?.department_name || 'No department',
-    phone: 'Not provided',
+    phone: user.staff_profile?.phone_number || 'Not provided',
     joinedDate: 'Recently'
   };
 
@@ -224,13 +250,22 @@ export default function Profile() {
 
             <div style={{ flex: 1, minWidth: '200px' }}>
               {/* Name + role */}
-              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap', marginBottom: '5px' }}>
-                <h2 style={{ fontSize: '22px', fontWeight: 900, color: t.title, margin: 0, letterSpacing: '-.7px' }}>
-                  {profileData.fullName}
-                </h2>
-                <span style={{ background: darkMode ? 'rgba(59,130,246,0.15)' : '#EFF6FF', color: darkMode ? '#60A5FA' : '#1D4ED8', border: `1.5px solid ${darkMode ? 'rgba(96,165,250,0.25)' : '#BFDBFE'}`, fontSize: '11px', fontWeight: 800, padding: '3px 10px', borderRadius: '22px' }}>
-                  {ROLE_LABELS[profileData.systemRole] || profileData.systemRole}
-                </span>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px', flexWrap: 'wrap', marginBottom: '5px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+                  <h2 style={{ fontSize: '22px', fontWeight: 900, color: t.title, margin: 0, letterSpacing: '-.7px' }}>
+                    {profileData.fullName}
+                  </h2>
+                  <span style={{ background: darkMode ? 'rgba(59,130,246,0.15)' : '#EFF6FF', color: darkMode ? '#60A5FA' : '#1D4ED8', border: `1.5px solid ${darkMode ? 'rgba(96,165,250,0.25)' : '#BFDBFE'}`, fontSize: '11px', fontWeight: 800, padding: '3px 10px', borderRadius: '22px' }}>
+                    {ROLE_LABELS[profileData.systemRole] || profileData.systemRole}
+                  </span>
+                </div>
+                {!isEditing && (
+                  <button onClick={handleEditClick} style={{ background: 'none', border: `1.5px solid ${t.border}`, borderRadius: '8px', padding: '6px 12px', fontSize: '12px', fontWeight: 700, color: t.text, cursor: 'pointer', transition: 'background .15s' }}
+                    onMouseEnter={e => e.currentTarget.style.backgroundColor = t.surface2}
+                    onMouseLeave={e => e.currentTarget.style.backgroundColor = 'transparent'}>
+                    Edit Profile
+                  </button>
+                )}
               </div>
 
               <div style={{ fontSize: '13px', color: t.sub, marginBottom: '16px', fontWeight: 600 }}>
@@ -238,14 +273,27 @@ export default function Profile() {
               </div>
 
               {/* Info chips */}
-              <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-                {infoChips.map((item, i) => (
-                  <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '7px', backgroundColor: t.chipBg, border: `1.5px solid ${t.border}`, borderRadius: '9px', padding: '7px 12px', fontSize: '12px', color: t.chipColor, fontWeight: 600 }}>
-                    <span style={{ color: t.sub, display: 'flex', flexShrink: 0 }}>{item.icon}</span>
-                    {item.value}
+              {!isEditing ? (
+                <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                  {infoChips.map((item, i) => (
+                    <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '7px', backgroundColor: t.chipBg, border: `1.5px solid ${t.border}`, borderRadius: '9px', padding: '7px 12px', fontSize: '12px', color: t.chipColor, fontWeight: 600 }}>
+                      <span style={{ color: t.sub, display: 'flex', flexShrink: 0 }}>{item.icon}</span>
+                      {item.value}
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div style={{ marginTop: '14px', background: t.surface2, padding: '16px', borderRadius: '12px', border: `1.5px dashed ${t.border}` }}>
+                  <label style={{ fontSize: '11px', fontWeight: 800, color: t.sub, textTransform: 'uppercase' }}>Phone Number</label>
+                  <input type="text" value={editForm.phone_number} onChange={e => setEditForm({...editForm, phone_number: e.target.value})} style={{ display: 'block', width: '100%', maxWidth: '300px', padding: '8px 12px', borderRadius: '8px', border: `1.5px solid ${t.border}`, background: t.surface, color: t.text, marginTop: '6px', marginBottom: '14px', fontFamily: 'inherit', fontSize: '13px' }} placeholder="+1 234 567 8900" />
+                  
+                  <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+                    <button onClick={handleSaveProfile} style={{ background: '#2563EB', color: '#fff', border: 'none', padding: '8px 16px', borderRadius: '8px', fontSize: '12px', fontWeight: 800, cursor: 'pointer' }}>Save</button>
+                    <button onClick={() => setIsEditing(false)} style={{ background: 'none', color: t.sub, border: 'none', fontSize: '12px', fontWeight: 700, cursor: 'pointer' }}>Cancel</button>
+                    {saveStatus && <span style={{ fontSize: '12px', fontWeight: 700, color: saveStatus.includes('Error') ? '#DC2626' : '#059669' }}>{saveStatus}</span>}
                   </div>
-                ))}
-              </div>
+                </div>
+              )}
             </div>
 
             {/* Current office quick stat */}

@@ -30,20 +30,25 @@ export default function OfficeHistory() {
   useEffect(() => {
     const fetchHistory = async () => {
       try {
-        const [assignRes, officesRes] = await Promise.all([
+        const [assignRes, officesRes, staffRes] = await Promise.all([
           client.get('/assignments/'),
-          client.get('/offices/')
+          client.get('/offices/search/'),
+          client.get('/staff/')
         ]);
         
         const assignData = assignRes.data.results || assignRes.data;
         const offData = officesRes.data.results || officesRes.data;
+        const staffData = staffRes.data.results || staffRes.data;
+        
+        const staffMap = {};
+        staffData.forEach(s => { staffMap[s.id] = s; });
         
         const offMap = {};
         offData.forEach(o => { offMap[o.id] = o; });
         
         let mapped = assignData.map(a => {
           const o = offMap[a.office] || {};
-          const s = a.staff || {};
+          const s = staffMap[a.staff] || {};
           
           // Calculate roughly duration
           const stDate = new Date(a.start_date);
@@ -59,8 +64,8 @@ export default function OfficeHistory() {
             officeId: a.office,
             officeNo: o.room_number || `Office ${a.office}`,
             building: o.building_name || `Building ${o.building}`,
-            name: `${s.first_name || ''} ${s.last_name || ''}`.trim() || 'Unknown Staff',
-            dept: s.department ? s.department.name : 'Unknown',
+            name: `${s.academic_title || ''} ${s.first_name || ''} ${s.last_name || ''}`.trim() || 'Unknown Staff',
+            dept: s.department_name || 'Unknown',
             start: a.start_date,
             end: a.end_date || null,
             duration: duration

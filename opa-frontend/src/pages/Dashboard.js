@@ -16,13 +16,20 @@ export default function Dashboard() {
   useEffect(() => {
     const fetchDashboardData = async () => {
       try {
-        const [officesRes, assignmentsRes] = await Promise.all([
+        const [officesRes, assignmentsRes, staffRes] = await Promise.all([
           client.get('/offices/search/'),
-          client.get('/assignments/')
+          client.get('/assignments/'),
+          client.get('/staff/')
         ]);
         
         const offices = officesRes.data.results || officesRes.data;
         const assignments = assignmentsRes.data.results || assignmentsRes.data;
+        const staffList = staffRes.data.results || staffRes.data;
+        
+        const staffMap = {};
+        staffList.forEach(s => { staffMap[s.id] = s; });
+        const offMap = {};
+        offices.forEach(o => { offMap[o.id] = o; });
         
         let occupied = 0;
         let available = 0;
@@ -53,13 +60,17 @@ export default function Dashboard() {
         
         // Map recent assignments
         // Sort by id descending as a proxy for recent, or date if available
-        const recent = assignments.slice(-5).reverse().map(a => ({
-          id: a.id,
-          officeNo: a.office ? a.office.room_number : 'Unknown', // Need to handle nested serializer if any
-          occupant: a.staff ? `${a.staff.first_name || ''} ${a.staff.last_name || a.staff.username || ''}` : 'Unknown',
-          department: a.staff && a.staff.department ? a.staff.department.name : 'Unknown',
-          date: a.start_date || 'Recently'
-        }));
+        const recent = assignments.slice(-5).reverse().map(a => {
+          const off = offMap[a.office] || {};
+          const stf = staffMap[a.staff] || {};
+          return {
+            id: a.id,
+            officeNo: off.room_number || 'Unknown',
+            occupant: `${stf.first_name || ''} ${stf.last_name || ''}`.trim() || 'Unknown',
+            department: stf.department_name || 'Unknown',
+            date: a.start_date || 'Recently'
+          };
+        });
         
         setRecentAssignments(recent);
       } catch (err) {

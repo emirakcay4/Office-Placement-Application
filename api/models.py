@@ -105,6 +105,7 @@ class Staff(models.Model):
     first_name = models.CharField(max_length=255)
     last_name = models.CharField(max_length=255)
     email = models.EmailField(unique=True)
+    phone_number = models.CharField(max_length=20, blank=True, default='')
     academic_title = models.CharField(max_length=100, blank=True, default='')
     system_role = models.CharField(
         max_length=50,

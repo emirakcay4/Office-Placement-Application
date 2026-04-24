@@ -17,6 +17,9 @@ export default function AdminPanel() {
   const [errorMsg,   setErrorMsg]   = useState('');
   const [conflicts,  setConflicts]  = useState([]);
   const [hoveredBtn, setHoveredBtn] = useState(null);
+  const [assignments, setAssignments] = useState([]);
+  const [expandedConflict, setExpandedConflict] = useState(null);
+  const [resolvingId, setResolvingId] = useState(null);
 
   const [offices, setOffices] = useState([]);
   const [staff, setStaff] = useState([]);
@@ -25,16 +28,19 @@ export default function AdminPanel() {
 
   const fetchData = async () => {
     try {
-      const [officesRes, staffRes] = await Promise.all([
+      const [officesRes, staffRes, assignRes] = await Promise.all([
         client.get('/offices/search/'),
-        client.get('/staff/')
+        client.get('/staff/'),
+        client.get('/assignments/')
       ]);
       
       const offData = officesRes.data.results || officesRes.data;
       const staffData = staffRes.data.results || staffRes.data;
+      const assignData = assignRes.data.results || assignRes.data;
       
       setOffices(offData);
       setStaff(staffData);
+      setAssignments(assignData);
       
       // Find conflicts
       const flags = offData.filter(o => o.current_occupants_count > o.capacity).map(o => ({
@@ -156,6 +162,24 @@ export default function AdminPanel() {
       setTimeout(() => setErrorMsg(''), 6000);
     } finally {
       setAssigning(false);
+    }
+  };
+
+  const handleUnassign = async (assignmentId) => {
+    setResolvingId(assignmentId);
+    setErrorMsg('');
+    try {
+      const today = new Date().toISOString().split('T')[0];
+      await client.patch(`/assignments/${assignmentId}/`, { end_date: today });
+      setSuccess('Staff unassigned successfully.');
+      setTimeout(() => setSuccess(''), 4000);
+      fetchData();
+    } catch (err) {
+      console.error(err);
+      setErrorMsg('Failed to unassign staff member.');
+      setTimeout(() => setErrorMsg(''), 6000);
+    } finally {
+      setResolvingId(null);
     }
   };
 
@@ -351,42 +375,74 @@ export default function AdminPanel() {
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                   {conflicts.map(c => {
                     const pct = Math.min((c.current / c.capacity) * 100, 100);
+                    const isExpanded = expandedConflict === c.id;
+                    const activeAssigns = assignments.filter(a => a.office === c.id && !a.end_date);
                     return (
-                      <div key={c.id} style={{ padding: '14px 16px', borderRadius: '12px', background: t.flagBg, border: `1.5px solid ${t.flagBorder}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flex: 1, minWidth: 0 }}>
-                          <div style={{ width: '36px', height: '36px', borderRadius: '9px', background: t.flagIconBg, border: `1.5px solid ${darkMode ? 'rgba(245,158,11,0.2)' : '#FDE68A'}`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                            <svg width="15" height="15" viewBox="0 0 16 16" fill="none">
-                              <path d="M8 2v5m0 2.5v1" stroke="#F59E0B" strokeWidth="1.8" strokeLinecap="round"/>
-                              <path d="M8 1L1 14h14L8 1z" stroke="#F59E0B" strokeWidth="1.4" strokeLinejoin="round"/>
-                            </svg>
-                          </div>
-                          <div style={{ flex: 1, minWidth: 0 }}>
-                            <div style={{ fontSize: '13px', fontWeight: 900, color: t.flagTitle, letterSpacing: '-.3px', marginBottom: '2px' }}>{c.officeNo}</div>
-                            <div style={{ fontSize: '11px', color: t.flagSub, fontWeight: 600, marginBottom: '6px' }}>{c.building} — {c.current}/{c.capacity} occupants</div>
-                            <div style={{ width: '80px', height: '4px', background: darkMode ? 'rgba(245,158,11,0.15)' : '#FDE68A', borderRadius: '2px', overflow: 'hidden' }}>
-                              <div style={{ height: '100%', width: `${pct}%`, background: '#F59E0B', borderRadius: '2px' }}/>
+                      <div key={c.id} style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                        <div style={{ padding: '14px 16px', borderRadius: '12px', background: t.flagBg, border: `1.5px solid ${t.flagBorder}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flex: 1, minWidth: 0 }}>
+                            <div style={{ width: '36px', height: '36px', borderRadius: '9px', background: t.flagIconBg, border: `1.5px solid ${darkMode ? 'rgba(245,158,11,0.2)' : '#FDE68A'}`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                              <svg width="15" height="15" viewBox="0 0 16 16" fill="none">
+                                <path d="M8 2v5m0 2.5v1" stroke="#F59E0B" strokeWidth="1.8" strokeLinecap="round"/>
+                                <path d="M8 1L1 14h14L8 1z" stroke="#F59E0B" strokeWidth="1.4" strokeLinejoin="round"/>
+                              </svg>
+                            </div>
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                              <div style={{ fontSize: '13px', fontWeight: 900, color: t.flagTitle, letterSpacing: '-.3px', marginBottom: '2px' }}>{c.officeNo}</div>
+                              <div style={{ fontSize: '11px', color: t.flagSub, fontWeight: 600, marginBottom: '6px' }}>{c.building} — {c.current}/{c.capacity} occupants</div>
+                              <div style={{ width: '80px', height: '4px', background: darkMode ? 'rgba(245,158,11,0.15)' : '#FDE68A', borderRadius: '2px', overflow: 'hidden' }}>
+                                <div style={{ height: '100%', width: `${pct}%`, background: '#F59E0B', borderRadius: '2px' }}/>
+                              </div>
                             </div>
                           </div>
+                          <button
+                            onClick={() => setExpandedConflict(isExpanded ? null : c.id)}
+                            onMouseEnter={() => setHoveredBtn(`resolve-${c.id}`)}
+                            onMouseLeave={() => setHoveredBtn(null)}
+                            style={{
+                              background: hoveredBtn === `resolve-${c.id}` || isExpanded ? '#F59E0B' : 'transparent',
+                              color: hoveredBtn === `resolve-${c.id}` || isExpanded ? '#fff' : '#D97706',
+                              border: `1.5px solid ${hoveredBtn === `resolve-${c.id}` || isExpanded ? '#F59E0B' : '#FCD34D'}`,
+                              borderRadius: '9px', padding: '7px 14px',
+                              fontSize: '12px', fontFamily: 'inherit', fontWeight: 800,
+                              cursor: 'pointer', transition: 'all .15s', flexShrink: 0,
+                              display: 'flex', alignItems: 'center', gap: '5px',
+                            }}
+                          >
+                            <svg width="11" height="11" viewBox="0 0 12 12" fill="none" style={{ transform: isExpanded ? 'rotate(180deg)' : 'none', transition: 'transform .2s' }}>
+                              <path d="M2 4l4 4 4-4" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/>
+                            </svg>
+                            {isExpanded ? 'Close' : 'Resolve'}
+                          </button>
                         </div>
-                        <button
-                          onClick={() => setConflicts(p => p.filter(x => x.id !== c.id))}
-                          onMouseEnter={() => setHoveredBtn(`resolve-${c.id}`)}
-                          onMouseLeave={() => setHoveredBtn(null)}
-                          style={{
-                            background: hoveredBtn === `resolve-${c.id}` ? '#F59E0B' : 'transparent',
-                            color: hoveredBtn === `resolve-${c.id}` ? '#fff' : '#D97706',
-                            border: `1.5px solid ${hoveredBtn === `resolve-${c.id}` ? '#F59E0B' : '#FCD34D'}`,
-                            borderRadius: '9px', padding: '7px 14px',
-                            fontSize: '12px', fontFamily: 'inherit', fontWeight: 800,
-                            cursor: 'pointer', transition: 'all .15s', flexShrink: 0,
-                            display: 'flex', alignItems: 'center', gap: '5px',
-                          }}
-                        >
-                          <svg width="11" height="11" viewBox="0 0 12 12" fill="none">
-                            <path d="M2 6l3 3 5-5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/>
-                          </svg>
-                          Resolve
-                        </button>
+                        
+                        {/* Expanded Occupants List */}
+                        {isExpanded && (
+                          <div style={{ padding: '12px', borderRadius: '12px', border: `1.5px dashed ${t.flagBorder}`, background: t.surface2, display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                            <div style={{ fontSize: '11px', fontWeight: 800, color: t.sub, textTransform: 'uppercase', letterSpacing: '.5px' }}>Current Occupants</div>
+                            {activeAssigns.length > 0 ? activeAssigns.map(a => {
+                              const stf = staff.find(s => s.id === a.staff) || {};
+                              const name = `${stf.academic_title || ''} ${stf.first_name || ''} ${stf.last_name || ''}`.trim() || 'Unknown Staff';
+                              return (
+                                <div key={a.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 12px', background: darkMode ? 'rgba(255,255,255,0.03)' : '#fff', border: `1.5px solid ${t.border}`, borderRadius: '8px' }}>
+                                  <div style={{ fontSize: '12.5px', fontWeight: 700, color: t.text }}>{name}</div>
+                                  <button
+                                    onClick={() => handleUnassign(a.id)}
+                                    disabled={resolvingId === a.id}
+                                    style={{
+                                      background: 'rgba(239,68,68,0.1)', color: '#DC2626', border: '1.5px solid rgba(239,68,68,0.3)',
+                                      borderRadius: '6px', padding: '5px 10px', fontSize: '11px', fontWeight: 800, cursor: resolvingId === a.id ? 'not-allowed' : 'pointer'
+                                    }}
+                                  >
+                                    {resolvingId === a.id ? 'Removing...' : 'Unassign'}
+                                  </button>
+                                </div>
+                              );
+                            }) : (
+                              <div style={{ fontSize: '12px', color: t.sub, fontStyle: 'italic' }}>No active assignments found.</div>
+                            )}
+                          </div>
+                        )}
                       </div>
                     );
                   })}

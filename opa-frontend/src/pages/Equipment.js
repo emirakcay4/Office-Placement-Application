@@ -49,7 +49,7 @@ export default function Equipment() {
       try {
         const [eqRes, offRes] = await Promise.all([
           client.get('/equipment/'),
-          client.get('/offices/')
+          client.get('/offices/search/')
         ]);
         
         const eqData = eqRes.data.results || eqRes.data;

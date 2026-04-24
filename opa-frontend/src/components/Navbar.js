@@ -1,9 +1,26 @@
 import React, { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useDarkMode } from '../context/DarkModeContext';
+import { useAuth } from '../context/AuthContext';
 
 export default function Navbar() {
   const { darkMode, toggleDark } = useDarkMode();
+  const { user, logout } = useAuth();
+  const navigate = useNavigate();
   const [showDropdown, setShowDropdown] = useState(false);
+  
+  const firstName = user?.staff_profile?.first_name || user?.username || 'User';
+  const role = user?.staff_profile?.system_role || 'Faculty';
+  const initials = firstName.substring(0, 2).toUpperCase();
+  
+  const roleLabels = {
+    faculty:          'Faculty',
+    department_admin: 'Dept. Admin',
+    resource_manager: 'Resource Manager',
+    system_admin:     'System Admin',
+    it_department:    'IT Dept.',
+  };
+  const roleLabel = roleLabels[role] || role;
 
   return (
     <header style={{
@@ -60,10 +77,10 @@ export default function Navbar() {
               background: 'linear-gradient(135deg, #3B82F6, #1D4ED8)',
               display: 'flex', alignItems: 'center', justifyContent: 'center',
               color: '#fff', fontFamily: 'Sora, sans-serif', fontWeight: '700', fontSize: '12px',
-            }}>ÇA</div>
+            }}>{initials}</div>
             <div>
-              <div style={{ color: '#fff', fontFamily: 'Sora, sans-serif', fontWeight: '600', fontSize: '13px', lineHeight: '1' }}>Çağla</div>
-              <div style={{ color: 'rgba(255,255,255,0.4)', fontFamily: 'Sora, sans-serif', fontSize: '10px', lineHeight: '1', marginTop: '3px' }}>Dept. Admin</div>
+              <div style={{ color: '#fff', fontFamily: 'Sora, sans-serif', fontWeight: '600', fontSize: '13px', lineHeight: '1' }}>{firstName}</div>
+              <div style={{ color: 'rgba(255,255,255,0.4)', fontFamily: 'Sora, sans-serif', fontSize: '10px', lineHeight: '1', marginTop: '3px' }}>{roleLabel}</div>
             </div>
             <svg width="12" height="12" viewBox="0 0 12 12" fill="none" style={{ opacity: 0.4 }}>
               <path d="M2 4l4 4 4-4" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
@@ -79,14 +96,19 @@ export default function Navbar() {
               minWidth: '160px', overflow: 'hidden',
             }}>
               {['Profile', 'Settings'].map(item => (
-                <div key={item} style={{ padding: '10px 16px', fontSize: '13px', fontFamily: 'Sora, sans-serif', color: darkMode ? '#C8DCF0' : '#1E3A5F', cursor: 'pointer', transition: 'background 0.15s' }}
+                <div key={item} 
+                  onClick={() => {
+                    setShowDropdown(false);
+                    if (item === 'Profile') navigate('/profile');
+                  }}
+                  style={{ padding: '10px 16px', fontSize: '13px', fontFamily: 'Sora, sans-serif', color: darkMode ? '#C8DCF0' : '#1E3A5F', cursor: 'pointer', transition: 'background 0.15s' }}
                   onMouseEnter={e => e.currentTarget.style.backgroundColor = darkMode ? 'rgba(255,255,255,0.05)' : '#F0F6FF'}
                   onMouseLeave={e => e.currentTarget.style.backgroundColor = 'transparent'}>
                   {item}
                 </div>
               ))}
               <div style={{ height: '1px', backgroundColor: darkMode ? 'rgba(255,255,255,0.06)' : '#E2EAF4' }} />
-              <div style={{ padding: '10px 16px', fontSize: '13px', fontFamily: 'Sora, sans-serif', color: '#EF4444', cursor: 'pointer' }}
+              <div onClick={logout} style={{ padding: '10px 16px', fontSize: '13px', fontFamily: 'Sora, sans-serif', color: '#EF4444', cursor: 'pointer' }}
                 onMouseEnter={e => e.currentTarget.style.backgroundColor = '#FEF2F2'}
                 onMouseLeave={e => e.currentTarget.style.backgroundColor = 'transparent'}>
                 Sign out
