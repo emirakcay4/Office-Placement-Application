@@ -16,7 +16,7 @@ from rest_framework import status
 
 from api.models import (
     Department, Building, Office, Staff,
-    ITEquipment, OfficeAssignment,
+    ITEquipment, OfficeAssignment, OfficeRequest,
 )
 
 
@@ -427,4 +427,159 @@ class JWTAuthTests(BaseTestSetup):
             'start_date': date.today().isoformat(),
         })
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+
+class OfficeRequestTests(BaseTestSetup):
+    """
+    Tests for the OfficeRequest endpoints.
+    Endpoint: /api/requests/
+    """
+
+    def setUp(self):
+        super().setUp()
+
+        # Link django users to staff
+        self.user_alice = User.objects.create_user(
+            username='alice.johnson',
+            email='alice@test.edu',
+            password='testpass123',
+        )
+        self.staff_alice.user = self.user_alice
+        self.staff_alice.save()
+
+        self.user_carol = User.objects.create_user(
+            username='carol.williams',
+            email='carol@test.edu',
+            password='testpass123',
+        )
+        self.staff_carol.user = self.user_carol
+        self.staff_carol.save()
+
+        self.user_admin = User.objects.create_user(
+            username='admin.user',
+            email='admin@test.edu',
+            password='testpass123',
+        )
+        self.staff_admin = Staff.objects.create(
+            department=self.dept,
+            first_name='Admin',
+            last_name='User',
+            email='admin.user@test.edu',
+            system_role='system_admin',
+            user=self.user_admin,
+        )
+
+    def test_create_request_success(self):
+        """Faculty user can successfully submit a request for an office."""
+        self.client.force_authenticate(user=self.user_alice)
+        response = self.client.post('/api/requests/', {
+            'office': self.office_single.pk,
+            'reason': 'Need a quiet workspace.',
+        })
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(response.data['status'], 'pending')
+        self.assertEqual(response.data['staff'], self.staff_alice.pk)
+
+    def test_create_request_forces_pending(self):
+        """Standard faculty user cannot create an approved request directly."""
+        self.client.force_authenticate(user=self.user_alice)
+        response = self.client.post('/api/requests/', {
+            'office': self.office_single.pk,
+            'reason': 'Cheat my way to approved.',
+            'status': 'approved',
+        })
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn('status', response.data)
+
+    def test_admin_can_create_non_pending_request(self):
+        """Admin user can create an approved request directly."""
+        self.client.force_authenticate(user=self.user_admin)
+        response = self.client.post('/api/requests/', {
+            'office': self.office_single.pk,
+            'reason': 'Direct assignment by admin.',
+            'status': 'approved',
+            'staff': self.staff_alice.pk, # Will be ignored anyway but let's test it
+        })
+        # Note: viewset perform_create always attaches request.user.staff_profile,
+        # so staff will be self.staff_admin. Let's make sure it is 201 Created.
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(response.data['status'], 'approved')
+
+    def test_queryset_visibility_faculty(self):
+        """Faculty member can only see their own requests."""
+        # Create requests for Alice and Carol
+        req_alice = OfficeRequest.objects.create(
+            office=self.office_single,
+            staff=self.staff_alice,
+            reason='Alice reason',
+        )
+        req_carol = OfficeRequest.objects.create(
+            office=self.office_shared,
+            staff=self.staff_carol,
+            reason='Carol reason',
+        )
+
+        # Authenticate as Alice
+        self.client.force_authenticate(user=self.user_alice)
+        response = self.client.get('/api/requests/')
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        results = response.data.get('results', response.data)
+        
+        # Alice should only see 1 request, which is her own
+        self.assertEqual(len(results), 1)
+        self.assertEqual(results[0]['id'], req_alice.id)
+
+    def test_queryset_visibility_admin(self):
+        """Admin can see all requests in the system."""
+        req_alice = OfficeRequest.objects.create(
+            office=self.office_single,
+            staff=self.staff_alice,
+            reason='Alice reason',
+        )
+        req_carol = OfficeRequest.objects.create(
+            office=self.office_shared,
+            staff=self.staff_carol,
+            reason='Carol reason',
+        )
+
+        # Authenticate as Admin
+        self.client.force_authenticate(user=self.user_admin)
+        response = self.client.get('/api/requests/')
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        results = response.data.get('results', response.data)
+        
+        # Admin should see both requests
+        self.assertEqual(len(results), 2)
+
+    def test_faculty_cannot_update_status(self):
+        """Faculty member cannot update the status of a request."""
+        req = OfficeRequest.objects.create(
+            office=self.office_single,
+            staff=self.staff_alice,
+            reason='Alice reason',
+        )
+
+        self.client.force_authenticate(user=self.user_alice)
+        response = self.client.patch(f'/api/requests/{req.id}/', {
+            'status': 'approved'
+        })
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn('status', response.data)
+
+    def test_admin_can_update_status(self):
+        """Admin user can approve or reject requests."""
+        req = OfficeRequest.objects.create(
+            office=self.office_single,
+            staff=self.staff_alice,
+            reason='Alice reason',
+        )
+
+        self.client.force_authenticate(user=self.user_admin)
+        response = self.client.patch(f'/api/requests/{req.id}/', {
+            'status': 'approved'
+        })
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data['status'], 'approved')
+        req.refresh_from_db()
+        self.assertEqual(req.status, 'approved')
 

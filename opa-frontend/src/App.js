@@ -12,6 +12,7 @@ import OfficeHistory from './pages/OfficeHistory';
 import OfficeMap from './pages/OfficeMap';
 import AdminPanel from './pages/AdminPanel';
 import Profile from './pages/Profile';
+import RequestOffice from './pages/RequestOffice';
 
 export default function App() {
   return (
@@ -30,6 +31,7 @@ export default function App() {
             <Route path="/history/:id" element={<ProtectedRoute><OfficeHistory /></ProtectedRoute>} />
             
             <Route path="/map" element={<ProtectedRoute><OfficeMap /></ProtectedRoute>} />
+            <Route path="/request-office" element={<ProtectedRoute><RequestOffice /></ProtectedRoute>} />
             
             <Route path="/admin" element={
               <ProtectedRoute requireRole="system_admin">

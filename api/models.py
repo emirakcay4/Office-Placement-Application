@@ -196,3 +196,36 @@ class OfficeAssignment(models.Model):
     def __str__(self):
         status = 'Active' if self.end_date is None else f'Until {self.end_date}'
         return f"{self.staff} → {self.office} ({status})"
+
+
+class OfficeRequest(models.Model):
+    """
+    Represents an office assignment request submitted by a staff member.
+    """
+    office = models.ForeignKey(
+        Office,
+        on_delete=models.CASCADE,
+        related_name='requests',
+        help_text='The office being requested.'
+    )
+    staff = models.ForeignKey(
+        Staff,
+        on_delete=models.CASCADE,
+        related_name='office_requests',
+        help_text='The staff member requesting the office.'
+    )
+    reason = models.TextField(help_text='Reason for requesting this office.')
+    status = models.CharField(
+        max_length=20,
+        choices=[('pending', 'Pending'), ('approved', 'Approved'), ('rejected', 'Rejected')],
+        default='pending'
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'office_request'
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f"Request by {self.staff} for {self.office} ({self.status})"
+

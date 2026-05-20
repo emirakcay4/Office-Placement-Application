@@ -37,6 +37,12 @@ const navItems = [
       <path d="M5.5 4.5v9M10 3v9" stroke="currentColor" strokeWidth="1.4"/>
     </svg>
   )},
+  { label: 'Request Office', path: '/request-office', icon: (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+      <path d="M11 2H5a2 2 0 00-2 2v8a2 2 0 002 2h6a2 2 0 002-2V4a2 2 0 00-2-2z" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/>
+      <path d="M6 6h4M6 9h4" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/>
+    </svg>
+  )},
   { label: 'Admin Panel',   path: '/admin', icon: (
     <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
       <circle cx="8" cy="8" r="2.5" stroke="currentColor" strokeWidth="1.4"/>

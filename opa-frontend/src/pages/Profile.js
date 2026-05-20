@@ -36,6 +36,80 @@ function Avatar({ name, size = 72 }) {
   );
 }
 
+const COUNTRIES = [
+  { code: '+1', name: 'US/CA', flag: '🇺🇸', format: '(XXX) XXX-XXXX', length: 10 },
+  { code: '+7', name: 'RU/KZ', flag: '🇷🇺', format: 'XXX XXX-XX-XX', length: 10 },
+  { code: '+44', name: 'UK', flag: '🇬🇧', format: 'XXXX XXXXXX', length: 10 },
+  { code: '+49', name: 'DE', flag: '🇩🇪', format: 'XXX XXXXXXXX', length: 11 },
+  { code: '+33', name: 'FR', flag: '🇫🇷', format: 'X XX XX XX XX', length: 9 },
+  { code: '+90', name: 'TR', flag: '🇹🇷', format: 'XXX XXX XX XX', length: 10 },
+  { code: '+91', name: 'IN', flag: '🇮🇳', format: 'XXXXX-XXXXX', length: 10 },
+  { code: '+86', name: 'CN', flag: '🇨🇳', format: 'XXX XXXX XXXX', length: 11 },
+  { code: '+34', name: 'ES', flag: '🇪🇸', format: 'XXX XX XX XX', length: 9 },
+  { code: '+39', name: 'IT', flag: '🇮🇹', format: 'XXX XXXXXXX', length: 10 },
+  { code: '+55', name: 'BR', flag: '🇧🇷', format: 'XX XXXXX-XXXX', length: 11 },
+];
+
+const parsePhoneNumber = (fullNumber) => {
+  if (!fullNumber) return { countryCode: '+1', number: '' };
+  const clean = fullNumber.replace(/[\s\-()]/g, '');
+  const sorted = [...COUNTRIES].sort((a, b) => b.code.length - a.code.length);
+  for (const c of sorted) {
+    if (clean.startsWith(c.code)) {
+      return { countryCode: c.code, number: clean.slice(c.code.length) };
+    }
+  }
+  if (clean.startsWith('+')) {
+    const match = clean.match(/^\+(\d{1,4})(.*)$/);
+    if (match) {
+      return { countryCode: `+${match[1]}`, number: match[2] };
+    }
+  }
+  return { countryCode: '+1', number: clean };
+};
+
+const formatNumberOnFly = (digits, countryCode) => {
+  if (!digits) return '';
+  if (countryCode === '+1') {
+    if (digits.length <= 3) return `(${digits}`;
+    if (digits.length <= 6) return `(${digits.slice(0, 3)}) ${digits.slice(3)}`;
+    return `(${digits.slice(0, 3)}) ${digits.slice(3, 6)}-${digits.slice(6, 10)}`;
+  }
+  if (countryCode === '+7') {
+    if (digits.length <= 3) return digits;
+    if (digits.length <= 6) return `${digits.slice(0, 3)} ${digits.slice(3)}`;
+    if (digits.length <= 8) return `${digits.slice(0, 3)} ${digits.slice(3, 6)}-${digits.slice(6)}`;
+    return `${digits.slice(0, 3)} ${digits.slice(3, 6)}-${digits.slice(6, 8)}-${digits.slice(8, 10)}`;
+  }
+  if (countryCode === '+44') {
+    if (digits.length <= 4) return digits;
+    return `${digits.slice(0, 4)} ${digits.slice(4, 10)}`;
+  }
+  if (countryCode === '+33' || countryCode === '+34') {
+    const parts = [];
+    let temp = digits;
+    if (countryCode === '+33') {
+      parts.push(temp.charAt(0));
+      temp = temp.slice(1);
+    } else {
+      parts.push(temp.slice(0, 3));
+      temp = temp.slice(3);
+    }
+    while (temp.length > 0) {
+      parts.push(temp.slice(0, 2));
+      temp = temp.slice(2);
+    }
+    return parts.join(' ');
+  }
+  if (countryCode === '+90') {
+    if (digits.length <= 3) return digits;
+    if (digits.length <= 6) return `${digits.slice(0, 3)} ${digits.slice(3)}`;
+    if (digits.length <= 8) return `${digits.slice(0, 3)} ${digits.slice(3, 6)} ${digits.slice(6)}`;
+    return `${digits.slice(0, 3)} ${digits.slice(3, 6)} ${digits.slice(6, 8)} ${digits.slice(8, 10)}`;
+  }
+  return digits;
+};
+
 export default function Profile() {
   const { darkMode } = useDarkMode();
   const { user } = useAuth();
@@ -43,22 +117,35 @@ export default function Profile() {
   const [hoveredRow, setHoveredRow] = useState(null);
   
   const [officeHistory, setOfficeHistory] = useState([]);
+  const [officeRequests, setOfficeRequests] = useState([]);
   const [equipmentRequests, setEquipmentRequests] = useState([]); // Placeholder
   const [loading, setLoading] = useState(true);
   
   const [isEditing, setIsEditing] = useState(false);
-  const [editForm, setEditForm] = useState({ phone_number: '' });
+  const [editCountryCode, setEditCountryCode] = useState('+1');
+  const [editNumberPart, setEditNumberPart] = useState('');
   const [saveStatus, setSaveStatus] = useState('');
 
   const handleEditClick = () => {
-    setEditForm({ phone_number: user.staff_profile?.phone_number || '' });
+    const { countryCode, number } = parsePhoneNumber(user.staff_profile?.phone_number || '');
+    setEditCountryCode(countryCode);
+    setEditNumberPart(number);
     setIsEditing(true);
   };
 
   const handleSaveProfile = async () => {
     try {
       setSaveStatus('Saving...');
-      await client.patch(`/staff/${user.staff_profile.id}/`, editForm);
+      const formattedNumber = formatNumberOnFly(editNumberPart, editCountryCode);
+      const fullPhoneNumber = `${editCountryCode} ${formattedNumber}`.trim();
+      
+      if (fullPhoneNumber.length > 20) {
+        setSaveStatus('Error: Number too long (max 20 chars)');
+        setTimeout(() => setSaveStatus(''), 3000);
+        return;
+      }
+
+      await client.patch(`/staff/${user.staff_profile.id}/`, { phone_number: fullPhoneNumber });
       setSaveStatus('Saved!');
       setTimeout(() => {
         setIsEditing(false);
@@ -80,13 +167,15 @@ export default function Profile() {
       }
       
       try {
-        const [assignRes, officesRes] = await Promise.all([
+        const [assignRes, officesRes, requestsRes] = await Promise.all([
           client.get('/assignments/'),
-          client.get('/offices/search/')
+          client.get('/offices/search/'),
+          client.get('/requests/')
         ]);
         
         const assignments = assignRes.data.results || assignRes.data;
         const offices = officesRes.data.results || officesRes.data;
+        const requests = requestsRes.data.results || requestsRes.data;
         
         const offMap = {};
         offices.forEach(o => { offMap[o.id] = o; });
@@ -117,6 +206,7 @@ export default function Profile() {
         });
         
         setOfficeHistory(mapped);
+        setOfficeRequests(requests);
       } catch (err) {
         console.error("Failed to load profile data", err);
       } finally {
@@ -209,8 +299,8 @@ export default function Profile() {
 
   const statData = [
     { label: 'Offices Held',       value: officeHistory.length },
-    { label: 'Equipment Requests', value: equipmentRequests.length },
-    { label: 'Approved Requests',  value: equipmentRequests.filter(r => r.status === 'approved').length },
+    { label: 'Office Requests',    value: officeRequests.length },
+    { label: 'Approved Requests',  value: officeRequests.filter(r => r.status === 'approved').length },
   ];
 
   const statIcons = [
@@ -221,6 +311,7 @@ export default function Profile() {
 
   const tabs = [
     { id: 'history',   label: 'Office History',     count: officeHistory.length     },
+    { id: 'requests',  label: 'Office Requests',    count: officeRequests.length    },
     { id: 'equipment', label: 'Equipment Requests', count: equipmentRequests.length },
   ];
 
@@ -285,7 +376,82 @@ export default function Profile() {
               ) : (
                 <div style={{ marginTop: '14px', background: t.surface2, padding: '16px', borderRadius: '12px', border: `1.5px dashed ${t.border}` }}>
                   <label style={{ fontSize: '11px', fontWeight: 800, color: t.sub, textTransform: 'uppercase' }}>Phone Number</label>
-                  <input type="text" value={editForm.phone_number} onChange={e => setEditForm({...editForm, phone_number: e.target.value})} style={{ display: 'block', width: '100%', maxWidth: '300px', padding: '8px 12px', borderRadius: '8px', border: `1.5px solid ${t.border}`, background: t.surface, color: t.text, marginTop: '6px', marginBottom: '14px', fontFamily: 'inherit', fontSize: '13px' }} placeholder="+1 234 567 8900" />
+                  
+                  {(() => {
+                    const selectedCountryObj = COUNTRIES.find(c => c.code === editCountryCode);
+                    const maxLength = selectedCountryObj ? selectedCountryObj.length : 15;
+                    const formatMask = selectedCountryObj ? selectedCountryObj.format : 'Phone number';
+                    
+                    const hasUnknownCode = editCountryCode && !COUNTRIES.some(c => c.code === editCountryCode);
+                    const allCountryOptions = [...COUNTRIES];
+                    if (hasUnknownCode) {
+                      allCountryOptions.push({
+                        code: editCountryCode,
+                        name: 'Other',
+                        flag: '🌐',
+                        format: 'X',
+                        length: 15
+                      });
+                    }
+
+                    const handlePhoneInputChange = (e) => {
+                      const digitsOnly = e.target.value.replace(/\D/g, '');
+                      const limitedDigits = digitsOnly.slice(0, maxLength);
+                      setEditNumberPart(limitedDigits);
+                    };
+
+                    return (
+                      <div style={{ display: 'flex', gap: '8px', marginTop: '6px', marginBottom: '14px', maxWidth: '360px' }}>
+                        <select
+                          value={editCountryCode}
+                          onChange={e => {
+                            setEditCountryCode(e.target.value);
+                            const targetCountry = allCountryOptions.find(c => c.code === e.target.value);
+                            const limit = targetCountry ? targetCountry.length : 15;
+                            setEditNumberPart(prev => prev.slice(0, limit));
+                          }}
+                          style={{
+                            padding: '8px 10px',
+                            borderRadius: '8px',
+                            border: `1.5px solid ${t.border}`,
+                            background: t.surface,
+                            color: t.text,
+                            fontFamily: 'inherit',
+                            fontSize: '13px',
+                            fontWeight: 600,
+                            cursor: 'pointer',
+                            outline: 'none',
+                            flexShrink: 0,
+                            transition: 'border-color 0.15s ease',
+                          }}
+                        >
+                          {allCountryOptions.map(c => (
+                            <option key={c.code} value={c.code}>
+                              {c.flag} {c.code} ({c.name})
+                            </option>
+                          ))}
+                        </select>
+                        <input
+                          type="text"
+                          value={formatNumberOnFly(editNumberPart, editCountryCode)}
+                          onChange={handlePhoneInputChange}
+                          placeholder={formatMask}
+                          style={{
+                            flex: 1,
+                            padding: '8px 12px',
+                            borderRadius: '8px',
+                            border: `1.5px solid ${t.border}`,
+                            background: t.surface,
+                            color: t.text,
+                            fontFamily: 'inherit',
+                            fontSize: '13px',
+                            outline: 'none',
+                            transition: 'border-color 0.15s ease',
+                          }}
+                        />
+                      </div>
+                    );
+                  })()}
                   
                   <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
                     <button onClick={handleSaveProfile} style={{ background: '#2563EB', color: '#fff', border: 'none', padding: '8px 16px', borderRadius: '8px', fontSize: '12px', fontWeight: 800, cursor: 'pointer' }}>Save</button>
@@ -407,6 +573,54 @@ export default function Profile() {
                       </td>
                     </tr>
                   ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          {/* ── Office Requests tab ── */}
+          {activeTab === 'requests' && (
+            <div style={{ overflowX: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                <thead>
+                  <tr style={{ background: t.surface2 }}>
+                    {['Office', 'Reason', 'Requested On', 'Status'].map((h, i) => (
+                      <th key={i} style={{ textAlign: 'left', fontSize: '10.5px', fontWeight: 800, color: t.thColor, textTransform: 'uppercase', letterSpacing: '1px', padding: '11px 20px', borderBottom: `1.5px solid ${t.border}`, whiteSpace: 'nowrap' }}>{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {loading ? (
+                    <tr><td colSpan={4} style={{ textAlign: 'center', padding: '48px', color: t.sub, fontSize: '14px' }}>Loading...</td></tr>
+                  ) : officeRequests.length === 0 ? (
+                    <tr><td colSpan={4} style={{ textAlign: 'center', padding: '48px', color: t.sub, fontSize: '14px' }}>No office requests found.</td></tr>
+                  ) : officeRequests.map((req, i) => {
+                    const st = REQUEST_STATUS[req.status] || REQUEST_STATUS.pending;
+                    return (
+                      <tr
+                        key={req.id}
+                        style={{ borderBottom: i < officeRequests.length - 1 ? `1px solid ${t.rowBorder}` : 'none', background: hoveredRow === `r-${req.id}` ? t.rowHover : 'transparent', transition: 'background .12s' }}
+                        onMouseEnter={() => setHoveredRow(`r-${req.id}`)}
+                        onMouseLeave={() => setHoveredRow(null)}
+                      >
+                        <td style={{ padding: '13px 20px' }}>
+                          <span style={{ background: t.officeChipBg, color: t.officeChipColor, fontSize: '12px', fontWeight: 800, padding: '4px 11px', borderRadius: '8px', display: 'inline-block', letterSpacing: '-.2px' }}>
+                            {req.office_room} - {req.office_building}
+                          </span>
+                        </td>
+                        <td style={{ padding: '13px 20px', fontSize: '13px', color: t.text, fontWeight: 600 }}>{req.reason}</td>
+                        <td style={{ padding: '13px 20px', fontSize: '13px', color: t.sub, fontWeight: 600 }}>
+                          {new Date(req.created_at).toLocaleDateString()}
+                        </td>
+                        <td style={{ padding: '13px 20px' }}>
+                          <span style={{ background: st.bg, color: st.color, border: `1.5px solid ${st.border}`, fontSize: '11px', fontWeight: 800, padding: '5px 11px', borderRadius: '22px', display: 'inline-flex', alignItems: 'center', gap: '5px', whiteSpace: 'nowrap' }}>
+                            <span style={{ width: '5px', height: '5px', borderRadius: '50%', background: st.dot, display: 'inline-block', flexShrink: 0 }}/>
+                            {st.label}
+                          </span>
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>

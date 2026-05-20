@@ -8,7 +8,7 @@ and JWT authentication serializers (SCRUM-24).
 
 from rest_framework import serializers
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
-from .models import Department, Building, Office, Staff, ITEquipment, OfficeAssignment
+from .models import Department, Building, Office, Staff, ITEquipment, OfficeAssignment, OfficeRequest
 
 
 # ──────────────────────────────────────────────────────────────
@@ -323,3 +323,41 @@ class OfficeDetailSerializer(serializers.ModelSerializer):
             'occupied': occupied,
             'available': obj.capacity - occupied,
         }
+
+
+class OfficeRequestSerializer(serializers.ModelSerializer):
+    """
+    Serializer for the OfficeRequest model.
+    """
+    staff_name = serializers.SerializerMethodField(read_only=True)
+    office_room = serializers.CharField(source='office.room_number', read_only=True)
+    office_building = serializers.CharField(source='office.building.name', read_only=True)
+
+    class Meta:
+        model = OfficeRequest
+        fields = [
+            'id', 'office', 'office_room', 'office_building',
+            'staff', 'staff_name', 'reason', 'status', 'created_at'
+        ]
+        read_only_fields = ['staff', 'created_at']
+
+    def get_staff_name(self, obj):
+        return f"{obj.staff.first_name} {obj.staff.last_name}"
+
+    def validate(self, attrs):
+        request = self.context.get('request')
+        user = request.user if request else None
+
+        # Check if status is being updated (or set during creation if not default)
+        if 'status' in attrs:
+            # Check if current user is an admin or manager
+            if self.instance:
+                # Update case
+                if not (user and hasattr(user, 'staff_profile') and user.staff_profile.system_role in ['system_admin', 'department_admin', 'resource_manager']):
+                    raise serializers.ValidationError({"status": "Only administrators can update the status of a request."})
+            else:
+                # Create case: standard users shouldn't set initial status to approved/rejected
+                if attrs['status'] != 'pending' and not (user and hasattr(user, 'staff_profile') and user.staff_profile.system_role in ['system_admin', 'department_admin', 'resource_manager']):
+                    raise serializers.ValidationError({"status": "Standard users can only create requests with 'pending' status."})
+
+        return attrs

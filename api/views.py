@@ -16,7 +16,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework_simplejwt.views import TokenObtainPairView
 
-from .models import Department, Building, Office, Staff, ITEquipment, OfficeAssignment
+from .models import Department, Building, Office, Staff, ITEquipment, OfficeAssignment, OfficeRequest
 from .serializers import (
     DepartmentSerializer,
     BuildingSerializer,
@@ -27,6 +27,7 @@ from .serializers import (
     OfficeDetailSerializer,
     CustomTokenObtainPairSerializer,
     CurrentUserSerializer,
+    OfficeRequestSerializer,
 )
 from .permissions import IsAdminOrReadOnly
 
@@ -212,4 +213,36 @@ class OfficeAssignmentViewSet(viewsets.ModelViewSet):
     queryset = OfficeAssignment.objects.select_related('office', 'staff').all()
     serializer_class = OfficeAssignmentSerializer
     permission_classes = [IsAdminOrReadOnly]
+
+
+class OfficeRequestViewSet(viewsets.ModelViewSet):
+    """
+    ViewSet for managing Office Requests.
+    Allows authenticated users to view, create and manage requests.
+    """
+    serializer_class = OfficeRequestSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        user = self.request.user
+        if not user or not user.is_authenticated:
+            return OfficeRequest.objects.none()
+
+        # System admins, department admins, and resource managers see all requests
+        if hasattr(user, 'staff_profile') and user.staff_profile.system_role in ['system_admin', 'department_admin', 'resource_manager']:
+            return OfficeRequest.objects.all()
+
+        # Standard users see only their own requests
+        if hasattr(user, 'staff_profile'):
+            return OfficeRequest.objects.filter(staff=user.staff_profile)
+
+        return OfficeRequest.objects.none()
+
+    def perform_create(self, serializer):
+        # Automatically attach the authenticated user's staff profile
+        if hasattr(self.request.user, 'staff_profile'):
+            serializer.save(staff=self.request.user.staff_profile)
+        else:
+            from rest_framework.exceptions import ValidationError
+            raise ValidationError("User has no associated staff profile.")
 

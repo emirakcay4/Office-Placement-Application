@@ -23,24 +23,29 @@ export default function AdminPanel() {
 
   const [offices, setOffices] = useState([]);
   const [staff, setStaff] = useState([]);
+  const [requests, setRequests] = useState([]);
+  const [resolvingRequestId, setResolvingRequestId] = useState(null);
   const [loading, setLoading] = useState(true);
   const [assigning, setAssigning] = useState(false);
 
   const fetchData = async () => {
     try {
-      const [officesRes, staffRes, assignRes] = await Promise.all([
+      const [officesRes, staffRes, assignRes, requestsRes] = await Promise.all([
         client.get('/offices/search/'),
         client.get('/staff/'),
-        client.get('/assignments/')
+        client.get('/assignments/'),
+        client.get('/requests/')
       ]);
       
       const offData = officesRes.data.results || officesRes.data;
       const staffData = staffRes.data.results || staffRes.data;
       const assignData = assignRes.data.results || assignRes.data;
+      const requestsData = requestsRes.data.results || requestsRes.data;
       
       setOffices(offData);
       setStaff(staffData);
       setAssignments(assignData);
+      setRequests(requestsData);
       
       // Find conflicts
       const flags = offData.filter(o => o.current_occupants_count > o.capacity).map(o => ({
@@ -102,6 +107,20 @@ export default function AdminPanel() {
     flagTitle:  '#92400E',
     flagSub:    '#B45309',
     flagIconBg: 'rgba(245,158,11,0.12)',
+  };
+
+  const getStatusStyle = (status) => {
+    switch (status) {
+      case 'approved':
+        return darkMode ? { color: '#34D399', bg: 'rgba(52,211,153,0.1)', border: 'rgba(52,211,153,0.25)' }
+                        : { color: '#059669', bg: '#ECFDF5', border: '#6EE7B7' };
+      case 'rejected':
+        return darkMode ? { color: '#F87171', bg: 'rgba(248,113,113,0.1)', border: 'rgba(248,113,113,0.25)' }
+                        : { color: '#DC2626', bg: '#FEF2F2', border: '#FCA5A5' };
+      default: // pending
+        return darkMode ? { color: '#FBBF24', bg: 'rgba(251,191,36,0.1)', border: 'rgba(251,191,36,0.25)' }
+                        : { color: '#B45309', bg: '#FFFBEB', border: '#FCD34D' };
+    }
   };
 
   const card = {
@@ -183,6 +202,24 @@ export default function AdminPanel() {
     }
   };
 
+  const handleRequestStatus = async (requestId, newStatus) => {
+    setResolvingRequestId(requestId);
+    setErrorMsg('');
+    setSuccess('');
+    try {
+      await client.patch(`/requests/${requestId}/`, { status: newStatus });
+      setSuccess(`Request successfully ${newStatus}.`);
+      setTimeout(() => setSuccess(''), 4000);
+      fetchData();
+    } catch (err) {
+      console.error(err);
+      setErrorMsg(`Failed to mark request as ${newStatus}.`);
+      setTimeout(() => setErrorMsg(''), 6000);
+    } finally {
+      setResolvingRequestId(null);
+    }
+  };
+
   return (
     <Layout>
       <div style={{ fontFamily: "'Nunito', 'Sora', sans-serif", display: 'flex', flexDirection: 'column', gap: '22px' }}>
@@ -241,7 +278,7 @@ export default function AdminPanel() {
 
             <div style={{ padding: '22px' }}>
               {/* Success banner */}
-              {success && (
+              {success && !resolvingRequestId && (
                 <div style={{ background: '#ECFDF5', border: '1.5px solid #6EE7B7', borderRadius: '10px', padding: '12px 16px', fontSize: '13px', color: '#059669', marginBottom: '20px', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '9px' }}>
                   <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
                     <path d="M3 8l4 4 6-6" stroke="#059669" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
@@ -250,7 +287,7 @@ export default function AdminPanel() {
                 </div>
               )}
               {/* Error banner */}
-              {errorMsg && (
+              {errorMsg && !resolvingRequestId && (
                 <div style={{ background: '#FEF2F2', border: '1.5px solid #FCA5A5', borderRadius: '10px', padding: '12px 16px', fontSize: '13px', color: '#DC2626', marginBottom: '20px', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '9px' }}>
                   <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
                     <circle cx="8" cy="8" r="7" stroke="#DC2626" strokeWidth="1.5"/>
@@ -452,6 +489,164 @@ export default function AdminPanel() {
           </div>
 
         </div>
+
+        {/* ── Office Requests Manager ── */}
+        <div style={card}>
+          <div style={{ padding: '18px 22px', borderBottom: `1.5px solid ${t.border}`, background: t.surface2, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <div style={{ width: '32px', height: '32px', borderRadius: '9px', background: 'linear-gradient(135deg, #10B981, #059669)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                <svg width="15" height="15" viewBox="0 0 16 16" fill="none">
+                  <path d="M11 2H5a2 2 0 00-2 2v8a2 2 0 002 2h6a2 2 0 002-2V4a2 2 0 00-2-2z" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                  <path d="M6 6h4M6 9h4" stroke="white" strokeWidth="1.5" strokeLinecap="round"/>
+                </svg>
+              </div>
+              <div>
+                <h2 style={{ fontSize: '14px', fontWeight: 800, color: t.title, margin: 0, letterSpacing: '-.3px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  Office Requests Manager
+                  {requests.filter(r => r.status === 'pending').length > 0 && (
+                    <span style={{ background: darkMode ? 'rgba(245,158,11,0.18)' : '#FEF3C7', color: '#D97706', fontSize: '11px', fontWeight: 800, padding: '2px 8px', borderRadius: '20px' }}>
+                      {requests.filter(r => r.status === 'pending').length} Pending
+                    </span>
+                  )}
+                </h2>
+                <p style={{ fontSize: '12px', color: t.sub, margin: '2px 0 0 0', fontWeight: 600 }}>Review, approve, or reject incoming office requests from faculty members.</p>
+              </div>
+            </div>
+          </div>
+
+          <div style={{ padding: '20px 22px' }}>
+            {/* Success and error alerts specific to requests */}
+            {success && resolvingRequestId && (
+              <div style={{ background: '#ECFDF5', border: '1.5px solid #6EE7B7', borderRadius: '10px', padding: '12px 16px', fontSize: '13px', color: '#059669', marginBottom: '20px', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '9px' }}>
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                  <path d="M3 8l4 4 6-6" stroke="#059669" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                </svg>
+                {success}
+              </div>
+            )}
+            {errorMsg && resolvingRequestId && (
+              <div style={{ background: '#FEF2F2', border: '1.5px solid #FCA5A5', borderRadius: '10px', padding: '12px 16px', fontSize: '13px', color: '#DC2626', marginBottom: '20px', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '9px' }}>
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                  <circle cx="8" cy="8" r="7" stroke="#DC2626" strokeWidth="1.5"/>
+                  <path d="M8 5v3M8 11h.01" stroke="#DC2626" strokeWidth="2" strokeLinecap="round"/>
+                </svg>
+                {errorMsg}
+              </div>
+            )}
+
+            {requests.length === 0 ? (
+              <div style={{ textAlign: 'center', padding: '40px 20px', color: t.sub, fontWeight: 600, fontSize: '13px' }}>
+                No office requests found in the system.
+              </div>
+            ) : (
+              <div style={{ overflowX: 'auto' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
+                  <thead>
+                    <tr style={{ borderBottom: `1.5px solid ${t.border}` }}>
+                      {['Faculty Member', 'Requested Office', 'Reason', 'Requested On', 'Status', 'Actions'].map((thName, idx) => (
+                        <th key={idx} style={{ padding: '10px 12px', fontSize: '10.5px', fontWeight: 800, color: t.sub, textTransform: 'uppercase', letterSpacing: '0.8px' }}>
+                          {thName}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {requests.map((req, reqIdx) => {
+                      const isPending = req.status === 'pending';
+                      const badgeStyle = getStatusStyle(req.status);
+                      const formattedDate = new Date(req.created_at).toLocaleDateString('en-US', {
+                        month: 'short',
+                        day: 'numeric',
+                        year: 'numeric'
+                      });
+
+                      return (
+                        <tr key={req.id} style={{ borderBottom: reqIdx < requests.length - 1 ? `1px solid ${t.border}` : 'none' }}>
+                          {/* Faculty Member */}
+                          <td style={{ padding: '14px 12px', fontSize: '13px', color: t.text, fontWeight: 700 }}>
+                            {req.staff_name || `Staff ID: ${req.staff}`}
+                          </td>
+
+                          {/* Requested Office */}
+                          <td style={{ padding: '14px 12px' }}>
+                            <span style={{ background: darkMode ? 'rgba(59,130,246,0.15)' : '#DBEAFE', color: darkMode ? '#60A5FA' : '#1D4ED8', fontSize: '11.5px', fontWeight: 800, padding: '3px 8px', borderRadius: '6px' }}>
+                              {req.office_room} ({req.office_building || 'Unknown Building'})
+                            </span>
+                          </td>
+
+                          {/* Reason */}
+                          <td style={{ padding: '14px 12px', fontSize: '12.5px', color: t.text, fontWeight: 500, maxWidth: '240px', wordBreak: 'break-word' }}>
+                            {req.reason}
+                          </td>
+
+                          {/* Requested On */}
+                          <td style={{ padding: '14px 12px', fontSize: '12.5px', color: t.sub, fontWeight: 600 }}>
+                            {formattedDate}
+                          </td>
+
+                          {/* Status */}
+                          <td style={{ padding: '14px 12px' }}>
+                            <span style={{
+                              display: 'inline-flex', alignItems: 'center', gap: '5px',
+                              background: badgeStyle.bg, color: badgeStyle.color, border: `1.5px solid ${badgeStyle.border}`,
+                              fontSize: '11px', fontWeight: 800, padding: '4px 10px', borderRadius: '20px'
+                            }}>
+                              <span style={{ width: '5px', height: '5px', borderRadius: '50%', background: badgeStyle.color, display: 'inline-block' }} />
+                              {req.status.charAt(0).toUpperCase() + req.status.slice(1)}
+                            </span>
+                          </td>
+
+                          {/* Actions */}
+                          <td style={{ padding: '14px 12px' }}>
+                            {isPending ? (
+                              <div style={{ display: 'flex', gap: '8px' }}>
+                                <button
+                                  onClick={() => handleRequestStatus(req.id, 'approved')}
+                                  disabled={resolvingRequestId === req.id}
+                                  style={{
+                                    background: 'linear-gradient(135deg, #10B981, #059669)',
+                                    color: '#fff', border: 'none', borderRadius: '6px',
+                                    padding: '6px 12px', fontSize: '11.5px', fontWeight: 800,
+                                    cursor: 'pointer', boxShadow: '0 2px 4px rgba(16,185,129,0.2)',
+                                    transition: 'all 0.15s'
+                                  }}
+                                  onMouseEnter={e => e.currentTarget.style.filter = 'brightness(1.08)'}
+                                  onMouseLeave={e => e.currentTarget.style.filter = 'none'}
+                                >
+                                  Approve
+                                </button>
+                                <button
+                                  onClick={() => handleRequestStatus(req.id, 'rejected')}
+                                  disabled={resolvingRequestId === req.id}
+                                  style={{
+                                    background: 'linear-gradient(135deg, #EF4444, #DC2626)',
+                                    color: '#fff', border: 'none', borderRadius: '6px',
+                                    padding: '6px 12px', fontSize: '11.5px', fontWeight: 800,
+                                    cursor: 'pointer', boxShadow: '0 2px 4px rgba(239,68,68,0.2)',
+                                    transition: 'all 0.15s'
+                                  }}
+                                  onMouseEnter={e => e.currentTarget.style.filter = 'brightness(1.08)'}
+                                  onMouseLeave={e => e.currentTarget.style.filter = 'none'}
+                                >
+                                  Reject
+                                </button>
+                              </div>
+                            ) : (
+                              <span style={{ fontSize: '11.5px', color: t.sub, fontWeight: 700, fontStyle: 'italic' }}>
+                                Resolved
+                              </span>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        </div>
+
       </div>
     </Layout>
   );

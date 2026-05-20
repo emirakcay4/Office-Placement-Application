@@ -28,6 +28,7 @@ from .views import (
     StaffViewSet,
     ITEquipmentViewSet,
     OfficeAssignmentViewSet,
+    OfficeRequestViewSet,
 )
 
 # Router for CRUD ViewSets (SCRUM-23)
@@ -37,6 +38,7 @@ router.register(r'buildings', BuildingViewSet, basename='building')
 router.register(r'staff', StaffViewSet, basename='staff')
 router.register(r'equipment', ITEquipmentViewSet, basename='equipment')
 router.register(r'assignments', OfficeAssignmentViewSet, basename='assignment')
+router.register(r'requests', OfficeRequestViewSet, basename='request')
 
 urlpatterns = [
     # SCRUM-24: JWT Authentication
