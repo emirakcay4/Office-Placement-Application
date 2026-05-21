@@ -28,6 +28,12 @@ export default function AdminPanel() {
   const [loading, setLoading] = useState(true);
   const [assigning, setAssigning] = useState(false);
 
+  // States for unassignment confirmation modal
+  const [confirmUnassignData, setConfirmUnassignData] = useState(null);
+  const [officeItEquipment, setOfficeItEquipment] = useState([]);
+  const [fetchingEquipment, setFetchingEquipment] = useState(false);
+  const [assignmentSuccessData, setAssignmentSuccessData] = useState(null);
+
   const fetchData = async () => {
     try {
       const [officesRes, staffRes, assignRes, requestsRes] = await Promise.all([
@@ -56,6 +62,7 @@ export default function AdminPanel() {
         current: o.current_occupants_count
       }));
       setConflicts(flags);
+      return { offData, staffData, assignData, requestsData };
     } catch (err) {
       console.error("Failed to fetch admin data:", err);
     } finally {
@@ -149,6 +156,13 @@ export default function AdminPanel() {
     cursor: 'pointer',
   };
 
+  const getActiveOfficeCount = (staffId) => {
+    return assignments.filter(a => {
+      const sId = typeof a.staff === 'object' && a.staff !== null ? a.staff.id : a.staff;
+      return sId === staffId && !a.end_date;
+    }).length;
+  };
+
   const isReady = selOffice && selPerson;
 
   const handleAssign = async () => {
@@ -159,21 +173,57 @@ export default function AdminPanel() {
     
     try {
       const today = new Date().toISOString().split('T')[0];
+      const officeIdInt = parseInt(selOffice);
+      const personIdInt = parseInt(selPerson);
+      
       await client.post('/assignments/', {
-        office: parseInt(selOffice),
-        staff: parseInt(selPerson),
+        office: officeIdInt,
+        staff: personIdInt,
         start_date: today
       });
       
-      const pName = staff.find(s => s.id === parseInt(selPerson))?.last_name || 'Staff';
-      const oName = offices.find(o => o.id === parseInt(selOffice))?.room_number || 'Office';
+      const pObj = staff.find(s => s.id === personIdInt);
+      const oObj = offices.find(o => o.id === officeIdInt);
       
-      setSuccess(`${pName} assigned to ${oName} successfully.`);
-      setSelOffice(''); setSelPerson('');
-      setTimeout(() => setSuccess(''), 4000);
+      // Refresh data and retrieve fresh results synchronously
+      const fresh = await fetchData();
       
-      // Refresh data
-      fetchData();
+      if (fresh) {
+        const freshOffice = fresh.offData.find(o => o.id === officeIdInt) || oObj;
+        const freshAssignments = fresh.assignData.filter(a => {
+          const oId = typeof a.office === 'object' && a.office !== null ? a.office.id : a.office;
+          return oId === officeIdInt && !a.end_date;
+        });
+        const currentOccupants = freshAssignments.map(a => {
+          const sId = typeof a.staff === 'object' && a.staff !== null ? a.staff.id : a.staff;
+          const stf = fresh.staffData.find(s => s.id === sId);
+          return stf ? `${stf.academic_title || ''} ${stf.first_name} ${stf.last_name}`.trim() : 'Unknown';
+        });
+
+        const freshPersonAssignments = fresh.assignData.filter(a => {
+          const sId = typeof a.staff === 'object' && a.staff !== null ? a.staff.id : a.staff;
+          return sId === personIdInt && !a.end_date;
+        });
+
+        setAssignmentSuccessData({
+          staffName: `${pObj?.academic_title || ''} ${pObj?.first_name} ${pObj?.last_name}`.trim(),
+          officeNo: freshOffice?.room_number || oObj?.room_number,
+          building: freshOffice?.building_name || oObj?.building_name,
+          floor: freshOffice?.floor || oObj?.floor,
+          occupiedSpots: freshOffice?.current_occupants_count ?? 0,
+          capacity: freshOffice?.capacity ?? 0,
+          occupants: currentOccupants,
+          officesHeld: freshPersonAssignments.length
+        });
+      } else {
+        const pName = pObj?.last_name || 'Staff';
+        const oName = oObj?.room_number || 'Office';
+        setSuccess(`${pName} assigned to ${oName} successfully.`);
+        setTimeout(() => setSuccess(''), 4000);
+      }
+      
+      setSelOffice('');
+      setSelPerson('');
     } catch (err) {
       console.error(err);
       const detail = err.response?.data?.office?.[0] || err.response?.data?.staff?.[0] || err.response?.data?.detail || 'Assignment failed.';
@@ -184,8 +234,31 @@ export default function AdminPanel() {
     }
   };
 
-  const handleUnassign = async (assignmentId) => {
+  const handleUnassignClick = async (assignment, staffName, officeNo) => {
+    const officeId = typeof assignment.office === 'object' ? assignment.office.id : assignment.office;
+    setConfirmUnassignData({
+      assignmentId: assignment.id,
+      staffName,
+      officeNo,
+      officeId
+    });
+    setOfficeItEquipment([]);
+    setFetchingEquipment(true);
+    try {
+      const res = await client.get(`/offices/${officeId}/`);
+      setOfficeItEquipment(res.data.it_equipment || []);
+    } catch (err) {
+      console.error("Failed to fetch office details for IT equipment warning:", err);
+    } finally {
+      setFetchingEquipment(false);
+    }
+  };
+
+  const handleConfirmUnassign = async () => {
+    if (!confirmUnassignData) return;
+    const { assignmentId } = confirmUnassignData;
     setResolvingId(assignmentId);
+    setConfirmUnassignData(null);
     setErrorMsg('');
     try {
       const today = new Date().toISOString().split('T')[0];
@@ -213,7 +286,8 @@ export default function AdminPanel() {
       fetchData();
     } catch (err) {
       console.error(err);
-      setErrorMsg(`Failed to mark request as ${newStatus}.`);
+      const detail = err.response?.data?.status?.[0] || err.response?.data?.detail || `Failed to mark request as ${newStatus}.`;
+      setErrorMsg(detail);
       setTimeout(() => setErrorMsg(''), 6000);
     } finally {
       setResolvingRequestId(null);
@@ -308,16 +382,95 @@ export default function AdminPanel() {
                   onBlur={e => e.target.style.borderColor = t.inputBorder}
                 >
                   <option value="">Select an office…</option>
-                  {offices.map(o => <option key={o.id} value={o.id}>{o.room_number} ({o.building_name})</option>)}
+                  {offices.map(o => {
+                    const occ = o.current_occupants_count ?? 0;
+                    const cap = o.capacity ?? 0;
+                    const spotsLeft = Math.max(0, cap - occ);
+                    const isFull = occ >= cap;
+                    const statusText = isFull 
+                      ? '[FULL]' 
+                      : `(${occ}/${cap} spots, ${spotsLeft} left)`;
+                    return (
+                      <option key={o.id} value={o.id}>
+                        {o.room_number} ({o.building_name}) — {statusText}
+                      </option>
+                    );
+                  })}
                 </select>
                 <span style={{ position: 'absolute', right: '10px', top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none', display: 'flex', color: t.sub }}>
                   <ChevronIcon color={t.sub}/>
                 </span>
               </div>
 
+              {/* Office Info Card */}
+              {selOffice && (() => {
+                const o = offices.find(x => x.id === parseInt(selOffice));
+                if (!o) return null;
+                const occ = o.current_occupants_count ?? 0;
+                const cap = o.capacity ?? 0;
+                const pct = cap > 0 ? Math.min((occ / cap) * 100, 100) : 0;
+                const spotsLeft = Math.max(0, cap - occ);
+                const isFull = occ >= cap;
+
+                return (
+                  <div style={{
+                    background: darkMode ? 'rgba(255,255,255,0.02)' : '#F5F9FF',
+                    border: `1.5px solid ${t.border}`,
+                    borderRadius: '12px',
+                    padding: '12px 14px',
+                    marginBottom: '16px',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '8px'
+                  }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <span style={{ fontSize: '11px', fontWeight: 800, color: t.sub, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                        Office Details
+                      </span>
+                      <span style={{
+                        fontSize: '10px',
+                        fontWeight: 800,
+                        background: isFull ? 'rgba(239,68,68,0.15)' : 'rgba(16,185,129,0.15)',
+                        color: isFull ? '#EF4444' : '#10B981',
+                        padding: '2px 8px',
+                        borderRadius: '20px',
+                        textTransform: 'uppercase'
+                      }}>
+                        {isFull ? 'Full' : `${spotsLeft} Spot${spotsLeft !== 1 ? 's' : ''} Available`}
+                      </span>
+                    </div>
+                    
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+                      <div>
+                        <div style={{ fontSize: '10px', color: t.sub, fontWeight: 700 }}>Location</div>
+                        <div style={{ fontSize: '12.5px', color: t.text, fontWeight: 800 }}>
+                          {o.building_name}, Floor {o.floor}
+                        </div>
+                      </div>
+                      <div>
+                        <div style={{ fontSize: '10px', color: t.sub, fontWeight: 700 }}>Office Type</div>
+                        <div style={{ fontSize: '12.5px', color: t.text, fontWeight: 800, textTransform: 'capitalize' }}>
+                          {o.office_type || 'Faculty Office'}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div style={{ marginTop: '4px' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', fontWeight: 700, color: t.text, marginBottom: '4px' }}>
+                        <span>Occupancy Ratio</span>
+                        <span>{occ} / {cap} ({Math.round(pct)}%)</span>
+                      </div>
+                      <div style={{ width: '100%', height: '6px', background: darkMode ? 'rgba(255,255,255,0.08)' : '#E2E8F0', borderRadius: '3px', overflow: 'hidden' }}>
+                        <div style={{ height: '100%', width: `${pct}%`, background: isFull ? 'linear-gradient(90deg, #EF4444, #F87171)' : 'linear-gradient(90deg, #3B82F6, #60A5FA)', borderRadius: '3px', transition: 'width 0.3s' }} />
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
+
               {/* Person select */}
               <label style={{ fontSize: '10.5px', fontWeight: 800, color: t.labelColor, textTransform: 'uppercase', letterSpacing: '1.2px', display: 'block', marginBottom: '7px' }}>Faculty / Staff</label>
-              <div style={{ position: 'relative', marginBottom: '20px' }}>
+              <div style={{ position: 'relative', marginBottom: '16px' }}>
                 <select
                   value={selPerson}
                   onChange={e => setSelPerson(e.target.value)}
@@ -326,12 +479,74 @@ export default function AdminPanel() {
                   onBlur={e => e.target.style.borderColor = t.inputBorder}
                 >
                   <option value="">Select a person…</option>
-                  {staff.map(p => <option key={p.id} value={p.id}>{p.academic_title} {p.first_name} {p.last_name}</option>)}
+                  {staff.map(p => {
+                    const holdsCount = getActiveOfficeCount(p.id);
+                    const holdsText = holdsCount === 0 
+                      ? '(holds no offices)' 
+                      : `(holds ${holdsCount} office${holdsCount !== 1 ? 's' : ''})`;
+                    return (
+                      <option key={p.id} value={p.id}>
+                        {p.academic_title} {p.first_name} {p.last_name} — {holdsText}
+                      </option>
+                    );
+                  })}
                 </select>
                 <span style={{ position: 'absolute', right: '10px', top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none', display: 'flex', color: t.sub }}>
                   <ChevronIcon color={t.sub}/>
                 </span>
               </div>
+
+              {/* Person Info Card */}
+              {selPerson && (() => {
+                const p = staff.find(x => x.id === parseInt(selPerson));
+                if (!p) return null;
+                const holdsCount = getActiveOfficeCount(p.id);
+
+                return (
+                  <div style={{
+                    background: darkMode ? 'rgba(255,255,255,0.02)' : '#F5F9FF',
+                    border: `1.5px solid ${t.border}`,
+                    borderRadius: '12px',
+                    padding: '12px 14px',
+                    marginBottom: '20px',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '8px'
+                  }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <span style={{ fontSize: '11px', fontWeight: 800, color: t.sub, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                        Staff Member Details
+                      </span>
+                      <span style={{
+                        fontSize: '10px',
+                        fontWeight: 800,
+                        background: holdsCount > 0 ? 'rgba(245,158,11,0.15)' : 'rgba(59,130,246,0.15)',
+                        color: holdsCount > 0 ? '#F59E0B' : '#3B82F6',
+                        padding: '2px 8px',
+                        borderRadius: '20px',
+                        textTransform: 'uppercase'
+                      }}>
+                        {holdsCount === 0 ? 'No offices held' : holdsCount === 1 ? '1 active office' : `${holdsCount} active offices`}
+                      </span>
+                    </div>
+
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+                      <div>
+                        <div style={{ fontSize: '10px', color: t.sub, fontWeight: 700 }}>Department</div>
+                        <div style={{ fontSize: '12.5px', color: t.text, fontWeight: 800 }}>
+                          {p.department_name || 'General Faculty'}
+                        </div>
+                      </div>
+                      <div>
+                        <div style={{ fontSize: '10px', color: t.sub, fontWeight: 700 }}>System Role</div>
+                        <div style={{ fontSize: '12.5px', color: t.text, fontWeight: 800, textTransform: 'capitalize' }}>
+                          {(p.system_role || 'faculty').replace('_', ' ')}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
 
               {/* Preview chip (when both selected) */}
               {isReady && (
@@ -464,7 +679,7 @@ export default function AdminPanel() {
                                 <div key={a.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 12px', background: darkMode ? 'rgba(255,255,255,0.03)' : '#fff', border: `1.5px solid ${t.border}`, borderRadius: '8px' }}>
                                   <div style={{ fontSize: '12.5px', fontWeight: 700, color: t.text }}>{name}</div>
                                   <button
-                                    onClick={() => handleUnassign(a.id)}
+                                    onClick={() => handleUnassignClick(a, name, c.officeNo)}
                                     disabled={resolvingId === a.id}
                                     style={{
                                       background: 'rgba(239,68,68,0.1)', color: '#DC2626', border: '1.5px solid rgba(239,68,68,0.3)',
@@ -569,14 +784,46 @@ export default function AdminPanel() {
 
                           {/* Requested Office */}
                           <td style={{ padding: '14px 12px' }}>
-                            <span style={{ background: darkMode ? 'rgba(59,130,246,0.15)' : '#DBEAFE', color: darkMode ? '#60A5FA' : '#1D4ED8', fontSize: '11.5px', fontWeight: 800, padding: '3px 8px', borderRadius: '6px' }}>
-                              {req.office_room} ({req.office_building || 'Unknown Building'})
-                            </span>
+                            {(() => {
+                              const targetOffice = offices.find(o => o.id === req.office);
+                              const occ = targetOffice ? targetOffice.current_occupants_count : 0;
+                              const cap = targetOffice ? targetOffice.capacity : 0;
+                              const isFull = targetOffice && occ >= cap;
+                              const isVacate = req.reason?.startsWith('[VACATE REQUEST]');
+
+                              return (
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                                  <div>
+                                    <span style={{
+                                      background: isVacate ? 'rgba(124,58,237,0.12)' : (darkMode ? 'rgba(59,130,246,0.15)' : '#DBEAFE'),
+                                      color: isVacate ? '#7C3AED' : (darkMode ? '#60A5FA' : '#1D4ED8'),
+                                      border: isVacate ? '1px solid rgba(124,58,237,0.3)' : 'none',
+                                      fontSize: '11.5px',
+                                      fontWeight: 800,
+                                      padding: '3px 8px',
+                                      borderRadius: '6px'
+                                    }}>
+                                      {isVacate ? '🔓 Vacate ' : ''}{req.office_room} ({req.office_building || 'Unknown Building'})
+                                    </span>
+                                  </div>
+                                  {!isVacate && targetOffice && (
+                                    <div style={{ fontSize: '11px', fontWeight: 700, color: isFull ? '#EF4444' : t.sub }}>
+                                      {isFull ? '🔴 Office Full' : `🟢 Occupied: ${occ}/${cap}`}
+                                    </div>
+                                  )}
+                                  {isVacate && (
+                                    <div style={{ fontSize: '11px', fontWeight: 700, color: '#7C3AED' }}>
+                                      🟣 Request to Release Room
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            })()}
                           </td>
 
                           {/* Reason */}
                           <td style={{ padding: '14px 12px', fontSize: '12.5px', color: t.text, fontWeight: 500, maxWidth: '240px', wordBreak: 'break-word' }}>
-                            {req.reason}
+                            {req.reason?.startsWith('[VACATE REQUEST]') ? req.reason.replace('[VACATE REQUEST]', '').trim() : req.reason}
                           </td>
 
                           {/* Requested On */}
@@ -648,6 +895,258 @@ export default function AdminPanel() {
         </div>
 
       </div>
+
+      {/* ── Unassign Confirmation Modal ── */}
+      {confirmUnassignData && (
+        <div style={{
+          position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+          backgroundColor: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(6px)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          zIndex: 9999, padding: '20px'
+        }}>
+          <div style={{
+            backgroundColor: t.surface,
+            borderRadius: '16px',
+            border: `1.5px solid ${t.border}`,
+            width: '100%',
+            maxWidth: '500px',
+            padding: '24px',
+            boxShadow: '0 20px 25px -5px rgba(0,0,0,0.3)',
+            fontFamily: 'inherit'
+          }}>
+            <h3 style={{ fontSize: '18px', fontWeight: 900, color: t.title, margin: '0 0 12px 0', letterSpacing: '-0.5px' }}>
+              Confirm Office Unassignment
+            </h3>
+            
+            <p style={{ fontSize: '14px', color: t.text, margin: '0 0 16px 0', fontWeight: 600, lineHeight: 1.4 }}>
+              Are you sure you want to unassign **{confirmUnassignData.staffName}** from office **{confirmUnassignData.officeNo}**? This will end their current occupancy assignment immediately.
+            </p>
+
+            {/* IT Equipment Warning Box */}
+            <div style={{
+              background: darkMode ? 'rgba(239,68,68,0.06)' : '#FEF2F2',
+              border: `1.5px solid ${darkMode ? 'rgba(239,68,68,0.2)' : '#FCA5A5'}`,
+              borderRadius: '12px',
+              padding: '16px',
+              marginBottom: '20px'
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                  <circle cx="8" cy="8" r="7" stroke="#DC2626" strokeWidth="1.5"/>
+                  <path d="M8 5v3M8 11h.01" stroke="#DC2626" strokeWidth="2" strokeLinecap="round"/>
+                </svg>
+                <span style={{ fontSize: '12px', fontWeight: 900, color: '#DC2626', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                  IT Equipment Check
+                </span>
+              </div>
+              
+              {fetchingEquipment ? (
+                <div style={{ fontSize: '12px', color: t.sub, fontStyle: 'italic' }}>Scanning office for IT equipment...</div>
+              ) : officeItEquipment.length > 0 ? (
+                <div>
+                  <p style={{ fontSize: '12px', color: darkMode ? '#F87171' : '#991B1B', margin: '0 0 10px 0', fontWeight: 700 }}>
+                    The following assets are registered to this office. Please notify the IT Department if they need to be recovered or reallocated:
+                  </p>
+                  <ul style={{ margin: 0, paddingLeft: '20px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                    {officeItEquipment.map(item => (
+                      <li key={item.id} style={{ fontSize: '12px', color: t.text, fontWeight: 600 }}>
+                        <strong style={{ textTransform: 'capitalize' }}>{item.asset_type}</strong> (S/N: {item.serial_number}) — <span style={{ textTransform: 'uppercase', fontSize: '10px', background: item.status === 'active' ? 'rgba(16,185,129,0.15)' : 'rgba(245,158,11,0.15)', color: item.status === 'active' ? '#10B981' : '#F59E0B', padding: '1px 6px', borderRadius: '4px', fontWeight: 800 }}>{item.status}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ) : (
+                <div style={{ fontSize: '12px', color: darkMode ? '#34D399' : '#065F46', fontWeight: 700 }}>
+                  ✓ No IT assets are registered to this office.
+                </div>
+              )}
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
+              <button
+                onClick={() => setConfirmUnassignData(null)}
+                style={{
+                  background: 'none',
+                  border: `1.5px solid ${t.border}`,
+                  borderRadius: '8px',
+                  padding: '8px 16px',
+                  fontSize: '12.5px',
+                  fontWeight: 700,
+                  color: t.text,
+                  cursor: 'pointer'
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleConfirmUnassign}
+                style={{
+                  background: 'linear-gradient(135deg, #EF4444, #DC2626)',
+                  color: '#fff',
+                  border: 'none',
+                  borderRadius: '8px',
+                  padding: '8px 16px',
+                  fontSize: '12.5px',
+                  fontWeight: 800,
+                  cursor: 'pointer',
+                  boxShadow: '0 4px 12px rgba(220,38,38,0.2)'
+                }}
+              >
+                Unassign Staff
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* ── Detailed Assignment Success Modal ── */}
+      {assignmentSuccessData && (
+        <div style={{
+          position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+          backgroundColor: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(6px)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          zIndex: 9999, padding: '20px'
+        }}>
+          <div style={{
+            backgroundColor: t.surface,
+            borderRadius: '20px',
+            border: `2px solid ${darkMode ? 'rgba(52,211,153,0.3)' : '#6EE7B7'}`,
+            width: '100%',
+            maxWidth: '520px',
+            padding: '28px',
+            boxShadow: darkMode ? '0 20px 40px rgba(0,0,0,0.5)' : '0 20px 40px rgba(15,60,120,0.15)',
+            fontFamily: 'inherit',
+            position: 'relative',
+            overflow: 'hidden'
+          }}>
+            {/* Top green success accent glow */}
+            <div style={{
+              position: 'absolute', top: 0, left: 0, right: 0, height: '6px',
+              background: 'linear-gradient(90deg, #10B981, #34D399)'
+            }} />
+
+            {/* Icon + Title */}
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', marginBottom: '22px' }}>
+              <div style={{
+                width: '56px', height: '56px', borderRadius: '50%',
+                background: darkMode ? 'rgba(16,185,129,0.15)' : '#ECFDF5',
+                border: `2px solid ${darkMode ? 'rgba(16,185,129,0.3)' : '#6EE7B7'}`,
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                marginBottom: '12px',
+                boxShadow: '0 4px 10px rgba(16,185,129,0.1)'
+              }}>
+                <svg width="24" height="24" viewBox="0 0 16 16" fill="none">
+                  <path d="M3 8l4 4 6-6" stroke="#10B981" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/>
+                </svg>
+              </div>
+              <h3 style={{ fontSize: '20px', fontWeight: 900, color: t.title, margin: 0, letterSpacing: '-0.5px' }}>
+                Assignment Successful!
+              </h3>
+              <p style={{ fontSize: '13px', color: t.sub, margin: '4px 0 0 0', fontWeight: 600 }}>
+                Faculty member has been successfully linked to the office.
+              </p>
+            </div>
+
+            {/* Target Details */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', marginBottom: '24px' }}>
+              {/* Faculty member stats */}
+              <div style={{
+                background: t.surface2, border: `1.5px solid ${t.border}`,
+                borderRadius: '12px', padding: '14px 16px'
+              }}>
+                <div style={{ fontSize: '10px', fontWeight: 800, color: t.sub, textTransform: 'uppercase', letterSpacing: '0.8px', marginBottom: '4px' }}>
+                  FACULTY MEMBER
+                </div>
+                <div style={{ fontSize: '15px', fontWeight: 800, color: t.text }}>
+                  {assignmentSuccessData.staffName}
+                </div>
+                <div style={{ fontSize: '12px', color: t.sub, fontWeight: 600, marginTop: '2px', display: 'flex', alignItems: 'center', gap: '5px' }}>
+                  <span>💼 Now holds <strong>{assignmentSuccessData.officesHeld}</strong> active office{assignmentSuccessData.officesHeld !== 1 ? 's' : ''}</span>
+                </div>
+              </div>
+
+              {/* Office stats & list of occupants */}
+              <div style={{
+                background: t.surface2, border: `1.5px solid ${t.border}`,
+                borderRadius: '12px', padding: '14px 16px'
+              }}>
+                <div style={{ fontSize: '10px', fontWeight: 800, color: t.sub, textTransform: 'uppercase', letterSpacing: '0.8px', marginBottom: '6px' }}>
+                  OFFICE DETAILS
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
+                  <div style={{ fontSize: '16px', fontWeight: 900, color: t.text }}>
+                    Office {assignmentSuccessData.officeNo}
+                  </div>
+                  <div style={{ fontSize: '12px', color: t.sub, fontWeight: 700 }}>
+                    {assignmentSuccessData.building}, Floor {assignmentSuccessData.floor}
+                  </div>
+                </div>
+
+                {/* Progress bar */}
+                <div style={{ marginTop: '12px', marginBottom: '14px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', fontWeight: 700, color: t.text, marginBottom: '6px' }}>
+                    <span>Occupied Spots</span>
+                    <span>{assignmentSuccessData.occupiedSpots} / {assignmentSuccessData.capacity}</span>
+                  </div>
+                  <div style={{ width: '100%', height: '6px', background: darkMode ? 'rgba(255,255,255,0.08)' : '#E2E8F0', borderRadius: '3px', overflow: 'hidden' }}>
+                    <div style={{
+                      height: '100%',
+                      width: `${Math.min((assignmentSuccessData.occupiedSpots / assignmentSuccessData.capacity) * 100, 100)}%`,
+                      background: 'linear-gradient(90deg, #10B981, #34D399)',
+                      borderRadius: '3px'
+                    }} />
+                  </div>
+                </div>
+
+                {/* Occupants list */}
+                <div>
+                  <div style={{ fontSize: '10.5px', fontWeight: 800, color: t.sub, textTransform: 'uppercase', letterSpacing: '0.6px', marginBottom: '6px' }}>
+                    Current Room Occupants ({assignmentSuccessData.occupants.length})
+                  </div>
+                  {assignmentSuccessData.occupants.length > 0 ? (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
+                      {assignmentSuccessData.occupants.map((name, i) => (
+                        <div key={i} style={{
+                          fontSize: '12px', fontWeight: 700, color: t.text,
+                          padding: '6px 10px', background: darkMode ? 'rgba(255,255,255,0.03)' : '#fff',
+                          border: `1px solid ${t.border}`, borderRadius: '6px',
+                          display: 'flex', alignItems: 'center', gap: '6px'
+                        }}>
+                          <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#10B981' }} />
+                          {name}
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div style={{ fontSize: '12px', color: t.sub, fontStyle: 'italic' }}>
+                      No occupants assigned to this room.
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* OK button */}
+            <button
+              onClick={() => setAssignmentSuccessData(null)}
+              style={{
+                width: '100%', padding: '12px',
+                background: 'linear-gradient(135deg,#10B981,#059669)',
+                color: '#fff', border: 'none', borderRadius: '10px',
+                fontSize: '13px', fontFamily: 'inherit', fontWeight: 800,
+                cursor: 'pointer',
+                boxShadow: '0 4px 14px rgba(16,185,129,0.3)',
+                transition: 'all 0.15s',
+                display: 'flex', alignItems: 'center', justifyContent: 'center'
+              }}
+              onMouseEnter={e => e.currentTarget.style.filter = 'brightness(1.08)'}
+              onMouseLeave={e => e.currentTarget.style.filter = 'none'}
+            >
+              Done
+            </button>
+          </div>
+        </div>
+      )}
+
     </Layout>
   );
 }

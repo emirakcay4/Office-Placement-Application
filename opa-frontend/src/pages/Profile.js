@@ -126,6 +126,39 @@ export default function Profile() {
   const [editNumberPart, setEditNumberPart] = useState('');
   const [saveStatus, setSaveStatus] = useState('');
 
+  const [vacatingOffice, setVacatingOffice] = useState(null);
+  const [vacateReason, setVacateReason] = useState('');
+  const [vacateSubmitStatus, setVacateSubmitStatus] = useState('');
+
+  const handleRequestVacateClick = (office) => {
+    setVacatingOffice(office);
+    setVacateReason('');
+    setVacateSubmitStatus('');
+  };
+
+  const handleRequestVacateSubmit = async () => {
+    if (!vacateReason.trim()) {
+      setVacateSubmitStatus('Error: Please enter a reason.');
+      return;
+    }
+    setVacateSubmitStatus('Submitting...');
+    try {
+      await client.post('/requests/', {
+        office: vacatingOffice.officeId,
+        reason: `[VACATE REQUEST] ${vacateReason}`
+      });
+      setVacateSubmitStatus('Request submitted successfully!');
+      setTimeout(() => {
+        setVacatingOffice(null);
+        window.location.reload();
+      }, 1000);
+    } catch (err) {
+      console.error(err);
+      const msg = err.response?.data?.office?.[0] || err.response?.data?.detail || 'Failed to submit request.';
+      setVacateSubmitStatus(`Error: ${msg}`);
+    }
+  };
+
   const handleEditClick = () => {
     const { countryCode, number } = parsePhoneNumber(user.staff_profile?.phone_number || '');
     setEditCountryCode(countryCode);
@@ -181,10 +214,15 @@ export default function Profile() {
         offices.forEach(o => { offMap[o.id] = o; });
         
         // Filter assignments for the current user
-        const userAssignments = assignments.filter(a => a.staff && a.staff.id === user.staff_profile.id);
+        const userAssignments = assignments.filter(a => {
+          if (!a.staff) return false;
+          const staffId = typeof a.staff === 'object' ? a.staff.id : a.staff;
+          return staffId === user.staff_profile.id;
+        });
         
         const mapped = userAssignments.map(a => {
-          const o = offMap[a.office] || {};
+          const officeId = typeof a.office === 'object' ? a.office.id : a.office;
+          const o = offMap[officeId] || {};
           
           const stDate = new Date(a.start_date);
           const enDate = a.end_date ? new Date(a.end_date) : new Date();
@@ -194,7 +232,8 @@ export default function Profile() {
           
           return {
             id: a.id,
-            officeNo: o.room_number || `Office ${a.office}`,
+            officeId: officeId,
+            officeNo: o.room_number || `Office ${officeId}`,
             building: o.building_name || 'Unknown',
             floor: o.floor || '-',
             start: a.start_date,
@@ -295,11 +334,11 @@ export default function Profile() {
     boxShadow: darkMode ? 'none' : '0 2px 12px rgba(15,60,120,0.07)',
   };
 
-  const currentOffice = officeHistory.find(h => !h.end);
+  const activeOffices = officeHistory.filter(h => !h.end);
 
   const statData = [
-    { label: 'Offices Held',       value: officeHistory.length },
-    { label: 'Office Requests',    value: officeRequests.length },
+    { label: 'Offices Held',       value: officeHistory.filter(h => !h.end).length },
+    { label: 'office requests waiting for approvement', value: officeRequests.filter(r => r.status === 'pending').length },
     { label: 'Approved Requests',  value: officeRequests.filter(r => r.status === 'approved').length },
   ];
 
@@ -318,7 +357,11 @@ export default function Profile() {
   const infoChips = [
     { icon: <svg width="13" height="13" viewBox="0 0 16 16" fill="none"><path d="M2 4l6 5 6-5M2 4h12v9a1 1 0 01-1 1H3a1 1 0 01-1-1V4z" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/></svg>, value: profileData.email },
     { icon: <svg width="13" height="13" viewBox="0 0 16 16" fill="none"><path d="M3 3a1 1 0 011-1h2l1 3-1.5 1.5a9 9 0 004 4L11 9l3 1v2a1 1 0 01-1 1A12 12 0 013 3z" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/></svg>, value: profileData.phone },
-    currentOffice && { icon: <svg width="13" height="13" viewBox="0 0 16 16" fill="none"><rect x="1" y="4" width="14" height="11" rx="1.5" stroke="currentColor" strokeWidth="1.4"/><path d="M5 4V3a3 3 0 016 0v1" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/></svg>, value: `${currentOffice.officeNo}, ${currentOffice.building}` },
+    ...activeOffices.map((office, idx) => ({
+      key: `office-chip-${idx}`,
+      icon: <svg width="13" height="13" viewBox="0 0 16 16" fill="none"><rect x="1" y="4" width="14" height="11" rx="1.5" stroke="currentColor" strokeWidth="1.4"/><path d="M5 4V3a3 3 0 016 0v1" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/></svg>,
+      value: `${office.officeNo}, ${office.building}`
+    }))
   ].filter(Boolean);
 
   return (
@@ -462,16 +505,38 @@ export default function Profile() {
               )}
             </div>
 
-            {/* Current office quick stat */}
-            {currentOffice && (
-              <div style={{ background: t.currentOfficeBg, border: `1.5px solid ${t.currentOfficeBorder}`, borderRadius: '14px', padding: '18px 22px', textAlign: 'center', minWidth: '130px' }}>
+            {/* Current office quick stats */}
+            {activeOffices.map(office => (
+              <div key={office.id} style={{ background: t.currentOfficeBg, border: `1.5px solid ${t.currentOfficeBorder}`, borderRadius: '14px', padding: '18px 22px', textAlign: 'center', minWidth: '130px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
                 <div style={{ fontSize: '22px', fontWeight: 900, color: darkMode ? '#60A5FA' : '#1D4ED8', letterSpacing: '-1px', lineHeight: 1, marginBottom: '4px' }}>
-                  {currentOffice.officeNo}
+                  {office.officeNo}
                 </div>
                 <div style={{ fontSize: '11px', color: t.sub, fontWeight: 700, marginBottom: '2px' }}>Current Office</div>
-                <div style={{ fontSize: '11px', color: t.muted, fontWeight: 600 }}>{currentOffice.building}, Floor {currentOffice.floor}</div>
+                <div style={{ fontSize: '11px', color: t.muted, fontWeight: 600, marginBottom: '8px' }}>{office.building}, Floor {office.floor}</div>
+                <button
+                  onClick={() => handleRequestVacateClick(office)}
+                  style={{
+                    background: 'none',
+                    border: `1px solid ${darkMode ? 'rgba(96,165,250,0.3)' : '#BFDBFE'}`,
+                    borderRadius: '6px',
+                    padding: '3px 8px',
+                    fontSize: '10px',
+                    fontWeight: 700,
+                    color: darkMode ? '#60A5FA' : '#1D4ED8',
+                    cursor: 'pointer',
+                    transition: 'all 0.15s ease',
+                  }}
+                  onMouseEnter={e => {
+                    e.currentTarget.style.backgroundColor = darkMode ? 'rgba(59,130,246,0.15)' : '#DBEAFE';
+                  }}
+                  onMouseLeave={e => {
+                    e.currentTarget.style.backgroundColor = 'transparent';
+                  }}
+                >
+                  Request to Vacate
+                </button>
               </div>
-            )}
+            ))}
           </div>
         </div>
 
@@ -604,11 +669,28 @@ export default function Profile() {
                         onMouseLeave={() => setHoveredRow(null)}
                       >
                         <td style={{ padding: '13px 20px' }}>
-                          <span style={{ background: t.officeChipBg, color: t.officeChipColor, fontSize: '12px', fontWeight: 800, padding: '4px 11px', borderRadius: '8px', display: 'inline-block', letterSpacing: '-.2px' }}>
-                            {req.office_room} - {req.office_building}
-                          </span>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                            <span style={{ background: t.officeChipBg, color: t.officeChipColor, fontSize: '12px', fontWeight: 800, padding: '4px 11px', borderRadius: '8px', display: 'inline-block', letterSpacing: '-.2px' }}>
+                              {req.office_room} - {req.office_building}
+                            </span>
+                            {req.reason?.startsWith('[VACATE REQUEST]') && (
+                              <span style={{
+                                background: 'rgba(124,58,237,0.15)',
+                                color: '#7C3AED',
+                                border: '1.5px solid rgba(124,58,237,0.25)',
+                                fontSize: '10px',
+                                fontWeight: 800,
+                                padding: '2px 8px',
+                                borderRadius: '12px'
+                              }}>
+                                Vacate
+                              </span>
+                            )}
+                          </div>
                         </td>
-                        <td style={{ padding: '13px 20px', fontSize: '13px', color: t.text, fontWeight: 600 }}>{req.reason}</td>
+                        <td style={{ padding: '13px 20px', fontSize: '13px', color: t.text, fontWeight: 600 }}>
+                          {req.reason?.startsWith('[VACATE REQUEST]') ? req.reason.replace('[VACATE REQUEST]', '').trim() : req.reason}
+                        </td>
                         <td style={{ padding: '13px 20px', fontSize: '13px', color: t.sub, fontWeight: 600 }}>
                           {new Date(req.created_at).toLocaleDateString()}
                         </td>
@@ -673,6 +755,104 @@ export default function Profile() {
             </div>
           )}
         </div>
+
+        {/* ── Vacate Request Modal ── */}
+        {vacatingOffice && (
+          <div style={{
+            position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+            backgroundColor: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(6px)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            zIndex: 9999, padding: '20px'
+          }}>
+            <div style={{
+              backgroundColor: t.surface,
+              borderRadius: '16px',
+              border: `1.5px solid ${t.border}`,
+              width: '100%',
+              maxWidth: '460px',
+              padding: '24px',
+              boxShadow: '0 20px 25px -5px rgba(0,0,0,0.3)',
+              fontFamily: 'inherit'
+            }}>
+              <h3 style={{ fontSize: '18px', fontWeight: 900, color: t.title, margin: '0 0 8px 0', letterSpacing: '-0.5px' }}>
+                Request to Vacate Office
+              </h3>
+              <p style={{ fontSize: '13px', color: t.sub, margin: '0 0 16px 0', fontWeight: 600 }}>
+                You are requesting to vacate **{vacatingOffice.officeNo}** ({vacatingOffice.building}, Floor {vacatingOffice.floor}).
+              </p>
+              
+              <div style={{ marginBottom: '16px' }}>
+                <label style={{ fontSize: '11px', fontWeight: 800, color: t.sub, textTransform: 'uppercase', display: 'block', marginBottom: '6px' }}>
+                  Reason for Vacating
+                </label>
+                <textarea
+                  value={vacateReason}
+                  onChange={e => setVacateReason(e.target.value)}
+                  placeholder="Explain why you are leaving this office (e.g. Sabbatical, department change, resignation...)"
+                  rows={4}
+                  style={{
+                    width: '100%',
+                    boxSizing: 'border-box',
+                    padding: '10px 12px',
+                    borderRadius: '8px',
+                    border: `1.5px solid ${t.border}`,
+                    background: t.surface2,
+                    color: t.text,
+                    fontFamily: 'inherit',
+                    fontSize: '13px',
+                    outline: 'none',
+                    resize: 'none',
+                    transition: 'border-color 0.15s'
+                  }}
+                />
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', alignItems: 'center' }}>
+                {vacateSubmitStatus && (
+                  <span style={{
+                    fontSize: '12px',
+                    fontWeight: 700,
+                    marginRight: 'auto',
+                    color: vacateSubmitStatus.includes('Error') ? '#DC2626' : '#059669'
+                  }}>
+                    {vacateSubmitStatus}
+                  </span>
+                )}
+                <button
+                  onClick={() => setVacatingOffice(null)}
+                  style={{
+                    background: 'none',
+                    border: `1.5px solid ${t.border}`,
+                    borderRadius: '8px',
+                    padding: '8px 16px',
+                    fontSize: '12.5px',
+                    fontWeight: 700,
+                    color: t.text,
+                    cursor: 'pointer'
+                  }}
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleRequestVacateSubmit}
+                  style={{
+                    background: '#DC2626',
+                    color: '#fff',
+                    border: 'none',
+                    borderRadius: '8px',
+                    padding: '8px 16px',
+                    fontSize: '12.5px',
+                    fontWeight: 800,
+                    cursor: 'pointer',
+                    boxShadow: '0 4px 12px rgba(220,38,38,0.2)'
+                  }}
+                >
+                  Submit Request
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
       </div>
     </Layout>

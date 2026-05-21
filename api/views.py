@@ -29,7 +29,7 @@ from .serializers import (
     CurrentUserSerializer,
     OfficeRequestSerializer,
 )
-from .permissions import IsAdminOrReadOnly
+from .permissions import IsAdminOrReadOnly, IsAssignmentAdminOrReadOnly
 
 
 # ──────────────────────────────────────────────────────────────
@@ -212,7 +212,7 @@ class OfficeAssignmentViewSet(viewsets.ModelViewSet):
 
     queryset = OfficeAssignment.objects.select_related('office', 'staff').all()
     serializer_class = OfficeAssignmentSerializer
-    permission_classes = [IsAdminOrReadOnly]
+    permission_classes = [IsAssignmentAdminOrReadOnly]
 
 
 class OfficeRequestViewSet(viewsets.ModelViewSet):

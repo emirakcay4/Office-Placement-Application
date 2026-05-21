@@ -164,6 +164,18 @@ class OfficeAssignmentSerializer(serializers.ModelSerializer):
         staff = attrs.get('staff')
         end_date = attrs.get('end_date')
 
+        # Check if the requesting user is a department admin and restrict them to their department
+        request = self.context.get('request')
+        user = request.user if request else None
+        if user and not user.is_superuser and hasattr(user, 'staff_profile'):
+            profile = user.staff_profile
+            if profile.system_role == 'department_admin':
+                target_staff = staff or (self.instance.staff if self.instance else None)
+                if target_staff and target_staff.department != profile.department:
+                    raise serializers.ValidationError({
+                        'staff': "Department Admins can only manage assignments for staff within their own department."
+                    })
+
         # Only validate capacity for ACTIVE assignments (end_date is None)
         if office and end_date is None:
             active_count = OfficeAssignment.objects.filter(
@@ -347,17 +359,125 @@ class OfficeRequestSerializer(serializers.ModelSerializer):
     def validate(self, attrs):
         request = self.context.get('request')
         user = request.user if request else None
+        staff = user.staff_profile if user and hasattr(user, 'staff_profile') else None
+        new_status = attrs.get('status')
 
         # Check if status is being updated (or set during creation if not default)
         if 'status' in attrs:
-            # Check if current user is an admin or manager
             if self.instance:
                 # Update case
                 if not (user and hasattr(user, 'staff_profile') and user.staff_profile.system_role in ['system_admin', 'department_admin', 'resource_manager']):
                     raise serializers.ValidationError({"status": "Only administrators can update the status of a request."})
+                
+                # Check department admin boundary
+                if user and hasattr(user, 'staff_profile') and user.staff_profile.system_role == 'department_admin':
+                    if self.instance.staff.department != user.staff_profile.department:
+                        raise serializers.ValidationError({"status": "Department Admins can only manage requests for staff within their own department."})
+                
+                # If changing status to approved, validate capacity!
+                if self.instance.status != 'approved' and new_status == 'approved':
+                    reason_str = attrs.get('reason') or self.instance.reason
+                    is_vacate = reason_str and reason_str.startswith('[VACATE REQUEST]')
+                    
+                    if not is_vacate:
+                        office = self.instance.office
+                        active_occupants = office.assignments.filter(end_date__isnull=True).count()
+                        if active_occupants >= office.capacity:
+                            raise serializers.ValidationError({
+                                "status": f"Cannot approve request. Office '{office}' is at full capacity ({active_occupants}/{office.capacity})."
+                            })
             else:
                 # Create case: standard users shouldn't set initial status to approved/rejected
-                if attrs['status'] != 'pending' and not (user and hasattr(user, 'staff_profile') and user.staff_profile.system_role in ['system_admin', 'department_admin', 'resource_manager']):
+                if new_status != 'pending' and not (user and hasattr(user, 'staff_profile') and user.staff_profile.system_role in ['system_admin', 'department_admin', 'resource_manager']):
                     raise serializers.ValidationError({"status": "Standard users can only create requests with 'pending' status."})
 
+        # Validate capacity on direct creation of approved requests
+        if not self.instance and new_status == 'approved':
+            reason_str = attrs.get('reason', '')
+            is_vacate = reason_str and reason_str.startswith('[VACATE REQUEST]')
+            
+            if not is_vacate:
+                office = attrs.get('office')
+                if office:
+                    active_occupants = office.assignments.filter(end_date__isnull=True).count()
+                    if active_occupants >= office.capacity:
+                        raise serializers.ValidationError({
+                            "office": f"Cannot create approved request. Office '{office}' is at full capacity ({active_occupants}/{office.capacity})."
+                        })
+
+        # Duplicate check on create: prevent multiple pending requests for the same office by the same staff
+        if not self.instance:
+            office = attrs.get('office')
+            if staff and office:
+                duplicate = OfficeRequest.objects.filter(staff=staff, office=office, status='pending')
+                if duplicate.exists():
+                    raise serializers.ValidationError({
+                        "office": f"You already have a pending request for office '{office.room_number}'."
+                    })
+
         return attrs
+
+    def create(self, validated_data):
+        instance = super().create(validated_data)
+
+        if instance.status == 'approved':
+            from datetime import date
+            from api.models import OfficeAssignment
+
+            # If it is a vacate request, only terminate the assignment for this specific office and staff
+            if instance.reason and instance.reason.startswith('[VACATE REQUEST]'):
+                OfficeAssignment.objects.filter(
+                    staff=instance.staff,
+                    office=instance.office,
+                    end_date__isnull=True
+                ).update(end_date=date.today())
+            else:
+                # 1. Terminate other active assignments for this staff member
+                OfficeAssignment.objects.filter(
+                    staff=instance.staff,
+                    end_date__isnull=True
+                ).update(end_date=date.today())
+
+                # 2. Create the new assignment starting today
+                OfficeAssignment.objects.get_or_create(
+                    office=instance.office,
+                    staff=instance.staff,
+                    end_date__isnull=True,
+                    defaults={'start_date': date.today()}
+                )
+
+        return instance
+
+    def update(self, instance, validated_data):
+        old_status = instance.status
+        new_status = validated_data.get('status', old_status)
+
+        instance = super().update(instance, validated_data)
+
+        if old_status != 'approved' and new_status == 'approved':
+            from datetime import date
+            from api.models import OfficeAssignment
+
+            # If it is a vacate request, only terminate the assignment for this specific office and staff
+            if instance.reason and instance.reason.startswith('[VACATE REQUEST]'):
+                OfficeAssignment.objects.filter(
+                    staff=instance.staff,
+                    office=instance.office,
+                    end_date__isnull=True
+                ).update(end_date=date.today())
+            else:
+                # 1. Terminate other active assignments for this staff member
+                OfficeAssignment.objects.filter(
+                    staff=instance.staff,
+                    end_date__isnull=True
+                ).update(end_date=date.today())
+
+                # 2. Automatically create the new assignment starting today
+                OfficeAssignment.objects.get_or_create(
+                    office=instance.office,
+                    staff=instance.staff,
+                    end_date__isnull=True,
+                    defaults={'start_date': date.today()}
+                )
+
+        return instance

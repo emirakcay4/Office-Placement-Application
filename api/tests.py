@@ -583,3 +583,289 @@ class OfficeRequestTests(BaseTestSetup):
         req.refresh_from_db()
         self.assertEqual(req.status, 'approved')
 
+    def test_admin_approval_creates_assignment(self):
+        """Admin approving a request automatically creates a corresponding OfficeAssignment."""
+        req = OfficeRequest.objects.create(
+            office=self.office_single,
+            staff=self.staff_alice,
+            reason='Need single room'
+        )
+        
+        # Verify no active assignment exists yet
+        self.assertFalse(OfficeAssignment.objects.filter(office=self.office_single, staff=self.staff_alice, end_date__isnull=True).exists())
+
+        self.client.force_authenticate(user=self.user_admin)
+        response = self.client.patch(f'/api/requests/{req.id}/', {'status': 'approved'})
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+        # Verify active assignment is created
+        self.assertTrue(OfficeAssignment.objects.filter(office=self.office_single, staff=self.staff_alice, end_date__isnull=True).exists())
+
+    def test_admin_approval_terminates_previous_assignment(self):
+        """Admin approving a request automatically terminates previous active assignments of that staff member."""
+        from datetime import date
+        # Create a previous assignment for Alice in office_shared
+        prev_assignment = OfficeAssignment.objects.create(
+            office=self.office_shared,
+            staff=self.staff_alice,
+            start_date=date(2026, 1, 1),
+            end_date=None
+        )
+
+        req = OfficeRequest.objects.create(
+            office=self.office_single,
+            staff=self.staff_alice,
+            reason='Moving to quiet room'
+        )
+
+        self.client.force_authenticate(user=self.user_admin)
+        response = self.client.patch(f'/api/requests/{req.id}/', {'status': 'approved'})
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+        # Previous assignment should be terminated (end_date populated)
+        prev_assignment.refresh_from_db()
+        self.assertEqual(prev_assignment.end_date, date.today())
+
+        # New assignment should be active
+        self.assertTrue(OfficeAssignment.objects.filter(office=self.office_single, staff=self.staff_alice, end_date__isnull=True).exists())
+
+    def test_admin_approval_capacity_validation(self):
+        """Admin cannot approve a request if the requested office is already at full capacity."""
+        from datetime import date
+        # fill self.office_single's capacity (it has capacity=1)
+        OfficeAssignment.objects.create(
+            office=self.office_single,
+            staff=self.staff_carol,
+            start_date=date.today(),
+            end_date=None
+        )
+
+        req = OfficeRequest.objects.create(
+            office=self.office_single,
+            staff=self.staff_alice,
+            reason='Try to squeeze in'
+        )
+
+        self.client.force_authenticate(user=self.user_admin)
+        response = self.client.patch(f'/api/requests/{req.id}/', {'status': 'approved'})
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn('status', response.data)
+        self.assertIn('full capacity', response.data['status'][0])
+
+    def test_faculty_cannot_duplicate_pending_request(self):
+        """Faculty member cannot file duplicate pending requests for the same office."""
+        self.client.force_authenticate(user=self.user_alice)
+        
+        # Create first request
+        response1 = self.client.post('/api/requests/', {
+            'office': self.office_single.pk,
+            'reason': 'First request.'
+        })
+        self.assertEqual(response1.status_code, status.HTTP_201_CREATED)
+
+        # Attempt to create duplicate request
+        response2 = self.client.post('/api/requests/', {
+            'office': self.office_single.pk,
+            'reason': 'Second duplicate request.'
+        })
+        self.assertEqual(response2.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn('office', response2.data)
+        self.assertIn('already have a pending request', response2.data['office'][0])
+
+
+class OfficeVacateAndUnassignTests(BaseTestSetup):
+    """
+    Tests for the Office Unassignment and Vacate Request workflows.
+    Includes role-based permissions (RBAC) and department boundaries.
+    """
+
+    def setUp(self):
+        super().setUp()
+
+        # Link Django users to staff
+        self.user_alice = User.objects.create_user(
+            username='alice.johnson',
+            email='alice@test.edu',
+            password='testpass123',
+        )
+        self.staff_alice.user = self.user_alice
+        self.staff_alice.save()
+
+        self.user_carol = User.objects.create_user(
+            username='carol.williams',
+            email='carol@test.edu',
+            password='testpass123',
+        )
+        self.staff_carol.user = self.user_carol
+        self.staff_carol.save()
+
+        # Create department admin for self.dept (Computer Science)
+        self.user_dept_admin = User.objects.create_user(
+            username='dept.admin',
+            email='dept_admin@test.edu',
+            password='testpass123',
+        )
+        self.staff_bob.user = self.user_dept_admin
+        self.staff_bob.save()
+
+        # Create system admin
+        self.user_system_admin = User.objects.create_user(
+            username='system.admin',
+            email='system_admin@test.edu',
+            password='testpass123',
+        )
+        self.staff_sys_admin = Staff.objects.create(
+            department=self.dept,
+            first_name='Sys',
+            last_name='Admin',
+            email='sysadmin@test.edu',
+            system_role='system_admin',
+            user=self.user_system_admin,
+        )
+
+        # Create another department
+        self.other_dept = Department.objects.create(
+            name='Chemistry',
+            description='Chemistry Department',
+        )
+
+        # Create a department admin for other_dept
+        self.user_other_dept_admin = User.objects.create_user(
+            username='other.dept.admin',
+            email='other_dept_admin@test.edu',
+            password='testpass123',
+        )
+        self.staff_other_dept_admin = Staff.objects.create(
+            department=self.other_dept,
+            first_name='David',
+            last_name='Jones',
+            email='david@test.edu',
+            system_role='department_admin',
+            user=self.user_other_dept_admin,
+        )
+
+        # Create a faculty member in other_dept
+        self.user_other_faculty = User.objects.create_user(
+            username='other.faculty',
+            email='other_fac@test.edu',
+            password='testpass123',
+        )
+        self.staff_other_faculty = Staff.objects.create(
+            department=self.other_dept,
+            first_name='Eve',
+            last_name='Brown',
+            email='eve@test.edu',
+            system_role='faculty',
+            user=self.user_other_faculty,
+        )
+
+    def test_department_admin_can_unassign_own_staff(self):
+        """Department admin can unassign a staff member in their own department."""
+        assignment = OfficeAssignment.objects.create(
+            office=self.office_single,
+            staff=self.staff_alice,
+            start_date=date.today(),
+            end_date=None
+        )
+        self.client.force_authenticate(user=self.user_dept_admin)
+        response = self.client.patch(
+            f'/api/assignments/{assignment.id}/',
+            {'end_date': date.today()}
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        assignment.refresh_from_db()
+        self.assertEqual(assignment.end_date, date.today())
+
+    def test_department_admin_cannot_unassign_other_dept_staff(self):
+        """Department admin cannot unassign a staff member from another department."""
+        assignment = OfficeAssignment.objects.create(
+            office=self.office_shared,
+            staff=self.staff_other_faculty,
+            start_date=date.today(),
+            end_date=None
+        )
+        # CS Dept admin bob tries to unassign Chemistry faculty Eve
+        self.client.force_authenticate(user=self.user_dept_admin)
+        response = self.client.patch(
+            f'/api/assignments/{assignment.id}/',
+            {'end_date': date.today()}
+        )
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_faculty_cannot_unassign_manually(self):
+        """Faculty members are blocked from making direct office assignment updates."""
+        assignment = OfficeAssignment.objects.create(
+            office=self.office_single,
+            staff=self.staff_alice,
+            start_date=date.today(),
+            end_date=None
+        )
+        self.client.force_authenticate(user=self.user_alice)
+        response = self.client.patch(
+            f'/api/assignments/{assignment.id}/',
+            {'end_date': date.today()}
+        )
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_faculty_can_create_vacate_request(self):
+        """Faculty can create a request to vacate their current office."""
+        self.client.force_authenticate(user=self.user_alice)
+        response = self.client.post('/api/requests/', {
+            'office': self.office_single.pk,
+            'reason': '[VACATE REQUEST] Moving out.',
+        })
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(response.data['status'], 'pending')
+        self.assertTrue(response.data['reason'].startswith('[VACATE REQUEST]'))
+
+    def test_approve_vacate_request_terminates_assignment_and_bypasses_capacity(self):
+        """Approving a vacate request terminates the assignment, does not create a new one, and bypasses capacity validation."""
+        # 1. Create active assignment for Alice in office_single
+        assignment = OfficeAssignment.objects.create(
+            office=self.office_single,
+            staff=self.staff_alice,
+            start_date=date.today(),
+            end_date=None
+        )
+        # 2. Create vacate request
+        req = OfficeRequest.objects.create(
+            office=self.office_single,
+            staff=self.staff_alice,
+            reason='[VACATE REQUEST] Vacating office.',
+            status='pending'
+        )
+        self.client.force_authenticate(user=self.user_system_admin)
+        response = self.client.patch(f'/api/requests/{req.id}/', {'status': 'approved'})
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+        # 4. Verify assignment is terminated
+        assignment.refresh_from_db()
+        self.assertEqual(assignment.end_date, date.today())
+
+        # 5. Verify NO new assignment was created
+        active_assignments = OfficeAssignment.objects.filter(staff=self.staff_alice, end_date__isnull=True)
+        self.assertEqual(active_assignments.count(), 0)
+
+    def test_dept_admin_cannot_approve_other_dept_vacate_request(self):
+        """Department admin cannot approve a vacate request of a staff member from another department."""
+        # 1. Active assignment for Chemistry staff member Eve
+        assignment = OfficeAssignment.objects.create(
+            office=self.office_shared,
+            staff=self.staff_other_faculty,
+            start_date=date.today(),
+            end_date=None
+        )
+        # 2. Vacate request for Eve
+        req = OfficeRequest.objects.create(
+            office=self.office_shared,
+            staff=self.staff_other_faculty,
+            reason='[VACATE REQUEST] Vacating Chemistry office.',
+            status='pending'
+        )
+        # 3. Authenticate as CS dept admin Bob and try to approve Chemistry staff Eve's request
+        self.client.force_authenticate(user=self.user_dept_admin)
+        response = self.client.patch(f'/api/requests/{req.id}/', {'status': 'approved'})
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn('status', response.data)
+        self.assertIn('Department Admins can only manage requests for staff within their own department', response.data['status'][0])
+

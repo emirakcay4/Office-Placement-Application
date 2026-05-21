@@ -95,7 +95,7 @@ export default function Navbar() {
               border: darkMode ? '1px solid rgba(255,255,255,0.08)' : '1px solid #E2EAF4',
               minWidth: '160px', overflow: 'hidden',
             }}>
-              {['Profile', 'Settings'].map(item => (
+              {['Profile'].map(item => (
                 <div key={item} 
                   onClick={() => {
                     setShowDropdown(false);

@@ -119,3 +119,52 @@ class IsAdminOrReadOnly(BasePermission):
             hasattr(request.user, 'staff_profile')
             and request.user.staff_profile.system_role == 'system_admin'
         )
+
+
+class IsAssignmentAdminOrReadOnly(BasePermission):
+    """
+    Grants access to write operations on Office Assignments:
+      - system_admin & resource_manager -> full write access.
+      - department_admin -> can modify. However, target staff member validation 
+        is performed in the serializer to ensure it falls within their department.
+      - Safe methods (GET, HEAD, OPTIONS) are open to any authenticated user.
+    """
+
+    def has_permission(self, request, view):
+        """Allow safe methods for all authenticated users, and write methods for admins/managers."""
+        if not request.user or not request.user.is_authenticated:
+            return False
+
+        if request.method in SAFE_METHODS:
+            return True
+
+        if request.user.is_superuser:
+            return True
+
+        if not hasattr(request.user, 'staff_profile'):
+            return False
+
+        role = request.user.staff_profile.system_role
+        return role in ['system_admin', 'resource_manager', 'department_admin']
+
+    def has_object_permission(self, request, view, obj):
+        """Verify object-level boundaries for Department Admins."""
+        if request.method in SAFE_METHODS:
+            return True
+
+        if request.user.is_superuser:
+            return True
+
+        if not hasattr(request.user, 'staff_profile'):
+            return False
+
+        profile = request.user.staff_profile
+        if profile.system_role in ['system_admin', 'resource_manager']:
+            return True
+
+        if profile.system_role == 'department_admin':
+            # Check if assignment's staff member belongs to the admin's department
+            return obj.staff.department == profile.department
+
+        return False
+

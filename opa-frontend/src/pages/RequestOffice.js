@@ -73,7 +73,25 @@ export default function RequestOffice() {
       setSuccess(true);
       setTimeout(() => navigate('/profile'), 2500);
     } catch (err) {
-      setError('Failed to submit request. Please try again.');
+      console.error("Failed to submit request:", err);
+      let errMsg = 'Failed to submit request. Please try again.';
+      if (err.response?.data) {
+        const data = err.response.data;
+        if (data.office) {
+          errMsg = Array.isArray(data.office) ? data.office[0] : data.office;
+        } else if (data.detail) {
+          errMsg = data.detail;
+        } else if (data.non_field_errors) {
+          errMsg = Array.isArray(data.non_field_errors) ? data.non_field_errors[0] : data.non_field_errors;
+        } else if (typeof data === 'object') {
+          const keys = Object.keys(data);
+          if (keys.length > 0) {
+            const firstError = data[keys[0]];
+            errMsg = Array.isArray(firstError) ? firstError[0] : String(firstError);
+          }
+        }
+      }
+      setError(errMsg);
     } finally {
       setLoading(false);
     }
