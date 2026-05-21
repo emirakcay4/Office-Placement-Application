@@ -9,6 +9,30 @@ const ChevronIcon = ({ color }) => (
   </svg>
 );
 
+// Pagination resolver to fetch all pages for any paginated endpoint
+const fetchAllPages = async (endpoint) => {
+  let results = [];
+  let nextUrl = endpoint;
+  while (nextUrl) {
+    let relativeUrl = nextUrl;
+    if (nextUrl.includes('/api/')) {
+      relativeUrl = nextUrl.split('/api')[1];
+    }
+    const res = await client.get(relativeUrl);
+    const data = res.data;
+    if (data && data.results && Array.isArray(data.results)) {
+      results = [...results, ...data.results];
+      nextUrl = data.next;
+    } else if (Array.isArray(data)) {
+      results = [...results, ...data];
+      nextUrl = null;
+    } else {
+      nextUrl = null;
+    }
+  }
+  return results;
+};
+
 export default function AdminPanel() {
   const { darkMode } = useDarkMode();
   const [selOffice,  setSelOffice]  = useState('');
@@ -36,17 +60,12 @@ export default function AdminPanel() {
 
   const fetchData = async () => {
     try {
-      const [officesRes, staffRes, assignRes, requestsRes] = await Promise.all([
-        client.get('/offices/search/'),
-        client.get('/staff/'),
-        client.get('/assignments/'),
-        client.get('/requests/')
+      const [offData, staffData, assignData, requestsData] = await Promise.all([
+        fetchAllPages('/offices/search/'),
+        fetchAllPages('/staff/'),
+        fetchAllPages('/assignments/'),
+        fetchAllPages('/requests/')
       ]);
-      
-      const offData = officesRes.data.results || officesRes.data;
-      const staffData = staffRes.data.results || staffRes.data;
-      const assignData = assignRes.data.results || assignRes.data;
-      const requestsData = requestsRes.data.results || requestsRes.data;
       
       setOffices(offData);
       setStaff(staffData);

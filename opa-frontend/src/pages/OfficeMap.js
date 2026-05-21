@@ -13,7 +13,8 @@ const STATUS = {
 const AVATAR_COLORS = ['#2563EB', '#059669', '#7C3AED', '#B45309', '#0891B2', '#DC2626'];
 
 function useOfficeStyle(id, selectedOffice, officeDetails) {
-  const detail = officeDetails && officeDetails[id] ? officeDetails[id] : null;
+  const key = id ? id.trim().toUpperCase() : '';
+  const detail = officeDetails && officeDetails[key] ? officeDetails[key] : null;
   const st     = detail ? STATUS[detail.status] : STATUS.unknown;
   const isSel  = selectedOffice === id;
   return {
@@ -247,6 +248,30 @@ function FloorMinus1({ darkMode }) {
   );
 }
 
+// Pagination resolver to fetch all pages for any paginated endpoint
+const fetchAllPages = async (endpoint) => {
+  let results = [];
+  let nextUrl = endpoint;
+  while (nextUrl) {
+    let relativeUrl = nextUrl;
+    if (nextUrl.includes('/api/')) {
+      relativeUrl = nextUrl.split('/api')[1];
+    }
+    const res = await client.get(relativeUrl);
+    const data = res.data;
+    if (data && data.results && Array.isArray(data.results)) {
+      results = [...results, ...data.results];
+      nextUrl = data.next;
+    } else if (Array.isArray(data)) {
+      results = [...results, ...data];
+      nextUrl = null;
+    } else {
+      nextUrl = null;
+    }
+  }
+  return results;
+};
+
 export default function OfficeMap() {
   const { darkMode } = useDarkMode();
   const [selectedFloor,  setSelectedFloor]  = useState('1');
@@ -259,49 +284,77 @@ export default function OfficeMap() {
     const fetchData = async () => {
       try {
         setLoading(true);
-        const [officesRes, assignRes, staffRes] = await Promise.all([
-          client.get('/offices/search/'),
-          client.get('/assignments/'),
-          client.get('/staff/')
-        ]);
         
-        const offData = officesRes.data.results || officesRes.data;
-        const assignData = assignRes.data.results || assignRes.data;
-        const staffData = staffRes.data.results || staffRes.data;
+        let offData = [];
+        let assignData = [];
+        let staffData = [];
+
+        try {
+          offData = await fetchAllPages('/offices/search/');
+        } catch (e) {
+          console.error("Failed to fetch offices for map", e);
+        }
+
+        try {
+          assignData = await fetchAllPages('/assignments/');
+        } catch (e) {
+          console.error("Failed to fetch assignments for map", e);
+        }
+
+        try {
+          staffData = await fetchAllPages('/staff/');
+        } catch (e) {
+          console.error("Failed to fetch staff for map", e);
+        }
         
         const staffMap = {};
-        staffData.forEach(s => { staffMap[s.id] = s; });
+        if (Array.isArray(staffData)) {
+          staffData.forEach(s => {
+            if (s && s.id) {
+              staffMap[s.id] = s;
+            }
+          });
+        }
         
-        const activeAssignments = assignData.filter(a => !a.end_date);
+        const activeAssignments = Array.isArray(assignData) 
+          ? assignData.filter(a => a && !a.end_date)
+          : [];
         
         const assignByOffice = {};
         activeAssignments.forEach(a => {
-          if (!assignByOffice[a.office]) assignByOffice[a.office] = [];
-          const p = staffMap[a.staff] || {};
-          const title = p.academic_title ? p.academic_title + ' ' : '';
-          const name = `${title}${p.first_name || ''} ${p.last_name || ''}`.trim();
-          assignByOffice[a.office].push(name || 'Unknown');
+          if (a && a.office) {
+            if (!assignByOffice[a.office]) assignByOffice[a.office] = [];
+            const p = staffMap[a.staff] || {};
+            const title = p.academic_title ? p.academic_title + ' ' : '';
+            const name = `${title}${p.first_name || ''} ${p.last_name || ''}`.trim();
+            assignByOffice[a.office].push(name || 'Unknown');
+          }
         });
         
         const details = {};
-        offData.forEach(o => {
-          let status = 'available';
-          const occupants = o.current_occupants_count || 0;
-          if (occupants > o.capacity) status = 'overcapacity';
-          else if (occupants === o.capacity) status = 'occupied';
-          else if (occupants > 0) status = 'available';
-          
-          details[o.room_number] = {
-            occupants: occupants,
-            capacity: o.capacity,
-            status: status,
-            people: assignByOffice[o.id] || []
-          };
-        });
+        if (Array.isArray(offData)) {
+          offData.forEach(o => {
+            if (o && o.room_number) {
+              let status = 'available';
+              const occupants = o.current_occupants_count || 0;
+              if (occupants > o.capacity) status = 'overcapacity';
+              else if (occupants === o.capacity) status = 'occupied';
+              else if (occupants > 0) status = 'available';
+              
+              const key = o.room_number.trim().toUpperCase();
+              details[key] = {
+                occupants: occupants,
+                capacity: o.capacity,
+                status: status,
+                people: assignByOffice[o.id] || []
+              };
+            }
+          });
+        }
         
         setOfficeDetails(details);
       } catch (err) {
-        console.error("Failed to fetch map data", err);
+        console.error("Critical error building map data", err);
       } finally {
         setLoading(false);
       }
@@ -350,7 +403,8 @@ export default function OfficeMap() {
     const svgEl = e.currentTarget.closest('svg');
     const rect  = svgEl ? svgEl.getBoundingClientRect() : { left: 0, top: 0 };
     setSelectedOffice(id);
-    const detail = officeDetails[id] || { occupants: 0, capacity: 2, status: 'available', people: [] };
+    const key = id ? id.trim().toUpperCase() : '';
+    const detail = officeDetails[key] || { occupants: 0, capacity: 2, status: 'available', people: [] };
     setPopupData({ id, detail: detail, x: e.clientX - rect.left, y: e.clientY - rect.top });
   };
 

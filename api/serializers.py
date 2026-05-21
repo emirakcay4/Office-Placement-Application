@@ -8,7 +8,7 @@ and JWT authentication serializers (SCRUM-24).
 
 from rest_framework import serializers
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
-from .models import Department, Building, Office, Staff, ITEquipment, OfficeAssignment, OfficeRequest
+from .models import Department, Building, Office, Staff, ITEquipment, OfficeAssignment, OfficeRequest, EquipmentRequest
 
 
 # ──────────────────────────────────────────────────────────────
@@ -481,3 +481,131 @@ class OfficeRequestSerializer(serializers.ModelSerializer):
                 )
 
         return instance
+
+
+class EquipmentRequestSerializer(serializers.ModelSerializer):
+    """
+    Serializer for the EquipmentRequest model.
+    """
+    staff_name = serializers.SerializerMethodField(read_only=True)
+    office_room = serializers.CharField(source='office.room_number', read_only=True)
+    office_building = serializers.CharField(source='office.building.name', read_only=True)
+
+    class Meta:
+        model = EquipmentRequest
+        fields = [
+            'id', 'office', 'office_room', 'office_building',
+            'staff', 'staff_name', 'asset_type', 'category',
+            'quantity', 'reason', 'status', 'rejection_reason',
+            'serial_number_assigned', 'created_at', 'updated_at'
+        ]
+        read_only_fields = ['staff', 'created_at', 'updated_at']
+
+    def get_staff_name(self, obj):
+        return f"{obj.staff.first_name} {obj.staff.last_name}"
+
+    def validate(self, attrs):
+        request = self.context.get('request')
+        user = request.user if request else None
+        staff = user.staff_profile if user and hasattr(user, 'staff_profile') else None
+        new_status = attrs.get('status')
+        asset_type = attrs.get('asset_type') or (self.instance.asset_type if self.instance else None)
+        category = attrs.get('category') or (self.instance.category if self.instance else None)
+
+        # Check if user has a staff profile
+        if not staff and not (user and user.is_superuser):
+            raise serializers.ValidationError("User has no associated staff profile.")
+
+        # Role checks for status / admin-only updates
+        if 'status' in attrs or 'rejection_reason' in attrs or 'serial_number_assigned' in attrs:
+            is_admin = staff and staff.system_role in ['system_admin', 'department_admin', 'resource_manager', 'it_department']
+            if not is_admin and not (user and user.is_superuser):
+                raise serializers.ValidationError("Only administrators can update request status or assign assets.")
+
+            # Validate rejection reason if status is being updated to rejected
+            if new_status == 'rejected':
+                if self.instance and not self.instance.rejection_reason and not attrs.get('rejection_reason'):
+                    raise serializers.ValidationError({"rejection_reason": "Rejection reason is mandatory when rejecting a request."})
+                elif not self.instance and not attrs.get('rejection_reason'):
+                    raise serializers.ValidationError({"rejection_reason": "Rejection reason is mandatory when rejecting a request."})
+
+            # Check department boundaries for Department Admins
+            if staff and staff.system_role == 'department_admin':
+                target_request_staff = self.instance.staff if self.instance else staff
+                if target_request_staff.department != staff.department:
+                    raise serializers.ValidationError("Department Admins can only manage requests for staff within their department.")
+
+        # On create
+        if not self.instance:
+            # Set category based on asset type if not provided
+            if not category and asset_type:
+                if asset_type in ['chair', 'desk']:
+                    attrs['category'] = 'furniture'
+                else:
+                    attrs['category'] = 'it'
+
+            # Standard users cannot create approved/rejected requests directly
+            if new_status and new_status != 'pending':
+                is_admin = staff and staff.system_role in ['system_admin', 'department_admin', 'resource_manager', 'it_department']
+                if not is_admin and not (user and user.is_superuser):
+                    raise serializers.ValidationError({"status": "Standard users can only submit requests in 'pending' status."})
+
+            # Validate quantity
+            quantity = attrs.get('quantity', 1)
+            if quantity <= 0:
+                raise serializers.ValidationError({"quantity": "Quantity must be greater than zero."})
+
+            # Validate that the user is assigned to the office (for Faculty / Staff)
+            office = attrs.get('office')
+            is_admin = staff and staff.system_role in ['system_admin', 'department_admin', 'resource_manager', 'it_department']
+            if not is_admin and not (user and user.is_superuser):
+                from api.models import OfficeAssignment
+                # Check active assignment
+                assigned = OfficeAssignment.objects.filter(
+                    staff=staff,
+                    office=office,
+                    end_date__isnull=True
+                ).exists()
+                if not assigned:
+                    raise serializers.ValidationError({
+                        "office": "You can only request equipment for offices you are currently assigned to."
+                    })
+
+        return attrs
+
+    def create(self, validated_data):
+        instance = super().create(validated_data)
+
+        # Trigger asset creation if approved immediately
+        if instance.status == 'approved':
+            self._deploy_asset(instance)
+
+        return instance
+
+    def update(self, instance, validated_data):
+        old_status = instance.status
+        new_status = validated_data.get('status', old_status)
+
+        instance = super().update(instance, validated_data)
+
+        if old_status != 'approved' and new_status == 'approved':
+            self._deploy_asset(instance)
+
+        return instance
+
+    def _deploy_asset(self, instance):
+        from api.models import ITEquipment
+        # Auto-generate serial number if empty
+        sn = instance.serial_number_assigned
+        if not sn:
+            sn = f"GEN-REQ-{instance.id}"
+            instance.serial_number_assigned = sn
+            instance.save()
+
+        # Create the asset in ITEquipment
+        ITEquipment.objects.get_or_create(
+            office=instance.office,
+            asset_type=instance.asset_type,
+            serial_number=sn,
+            defaults={'status': 'active'}
+        )

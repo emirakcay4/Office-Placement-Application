@@ -22,6 +22,30 @@ const ArrowIcon = () => (
   </svg>
 );
 
+// Pagination resolver to fetch all pages for any paginated endpoint
+const fetchAllPages = async (endpoint) => {
+  let results = [];
+  let nextUrl = endpoint;
+  while (nextUrl) {
+    let relativeUrl = nextUrl;
+    if (nextUrl.includes('/api/')) {
+      relativeUrl = nextUrl.split('/api')[1];
+    }
+    const res = await client.get(relativeUrl);
+    const data = res.data;
+    if (data && data.results && Array.isArray(data.results)) {
+      results = [...results, ...data.results];
+      nextUrl = data.next;
+    } else if (Array.isArray(data)) {
+      results = [...results, ...data];
+      nextUrl = null;
+    } else {
+      nextUrl = null;
+    }
+  }
+  return results;
+};
+
 export default function Offices() {
   const { darkMode } = useDarkMode();
   const navigate = useNavigate();
@@ -39,14 +63,7 @@ export default function Offices() {
   const fetchOffices = async () => {
     setLoading(true);
     try {
-      // Build query string based on backend support
-      const params = new URLSearchParams();
-      if (search) params.append('search', search);
-      // Wait, we can fetch all and filter in frontend to get dynamic options for dropdowns, 
-      // or we can fetch filtered data. Since it's a dashboard, fetching all and filtering locally 
-      // is similar to what was done with mock data. Let's do that for the dropdowns.
-      const res = await client.get('/offices/search/');
-      const data = res.data.results || res.data;
+      const data = await fetchAllPages('/offices/search/');
       
       const mapped = data.map(o => {
         let st = 'available';

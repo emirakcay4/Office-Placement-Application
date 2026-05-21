@@ -16,7 +16,7 @@ from rest_framework import status
 
 from api.models import (
     Department, Building, Office, Staff,
-    ITEquipment, OfficeAssignment, OfficeRequest,
+    ITEquipment, OfficeAssignment, OfficeRequest, EquipmentRequest
 )
 
 
@@ -868,4 +868,124 @@ class OfficeVacateAndUnassignTests(BaseTestSetup):
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertIn('status', response.data)
         self.assertIn('Department Admins can only manage requests for staff within their own department', response.data['status'][0])
+
+
+class EquipmentRequestTests(OfficeVacateAndUnassignTests):
+    """
+    Tests for the Equipment Request and Management workflows.
+    Includes validation, roles, and auto-deployment logic.
+    """
+
+    def setUp(self):
+        super().setUp()
+        
+        # Create an IT Department user for testing permissions
+        self.user_it_staff = User.objects.create_user(
+            username='it.staff',
+            email='it@test.edu',
+            password='testpass123',
+        )
+        self.staff_it_staff = Staff.objects.create(
+            department=self.dept,
+            first_name='IT',
+            last_name='Staff',
+            email='it@test.edu',
+            system_role='it_department',
+            user=self.user_it_staff,
+        )
+
+    def test_faculty_cannot_request_for_unassigned_office(self):
+        """Faculty cannot submit an equipment request for a room they do not occupy."""
+        self.client.force_authenticate(user=self.user_alice)
+        # Alice is not assigned to office_shared
+        response = self.client.post('/api/equipment-requests/', {
+            'office': self.office_shared.pk,
+            'asset_type': 'computer',
+            'quantity': 1,
+            'reason': 'Need a PC.'
+        })
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn('office', response.data)
+
+    def test_faculty_can_request_for_assigned_office(self):
+        """Faculty can submit an equipment request for their currently assigned office."""
+        # 1. Assign Alice to office_single
+        OfficeAssignment.objects.create(
+            office=self.office_single,
+            staff=self.staff_alice,
+            start_date=date.today(),
+            end_date=None
+        )
+        self.client.force_authenticate(user=self.user_alice)
+        response = self.client.post('/api/equipment-requests/', {
+            'office': self.office_single.pk,
+            'asset_type': 'computer',
+            'quantity': 1,
+            'reason': 'Need a computer for research.'
+        })
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(response.data['status'], 'pending')
+        self.assertEqual(response.data['category'], 'it')  # auto-detected
+
+    def test_faculty_cannot_approve_own_request(self):
+        """Faculty members cannot approve or manage requests directly."""
+        req = EquipmentRequest.objects.create(
+            office=self.office_single,
+            staff=self.staff_alice,
+            asset_type='computer',
+            category='it',
+            quantity=1,
+            reason='Research.',
+            status='pending'
+        )
+        self.client.force_authenticate(user=self.user_alice)
+        response = self.client.patch(f'/api/equipment-requests/{req.id}/', {
+            'status': 'approved'
+        })
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_it_staff_can_approve_request_and_deploys_asset(self):
+        """IT staff can approve a tech request, which automatically creates an ITEquipment record."""
+        req = EquipmentRequest.objects.create(
+            office=self.office_single,
+            staff=self.staff_alice,
+            asset_type='computer',
+            category='it',
+            quantity=1,
+            reason='Research.',
+            status='pending'
+        )
+        self.client.force_authenticate(user=self.user_it_staff)
+        response = self.client.patch(f'/api/equipment-requests/{req.id}/', {
+            'status': 'approved',
+            'serial_number_assigned': 'SN-ALICE-PC-999'
+        })
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data['status'], 'approved')
+        self.assertEqual(response.data['serial_number_assigned'], 'SN-ALICE-PC-999')
+
+        # Verify asset was deployed in the database
+        asset = ITEquipment.objects.filter(office=self.office_single, serial_number='SN-ALICE-PC-999')
+        self.assertTrue(asset.exists())
+        self.assertEqual(asset.first().asset_type, 'computer')
+        self.assertEqual(asset.first().status, 'active')
+
+    def test_dept_admin_cannot_approve_other_department_request(self):
+        """Department Admin cannot manage equipment requests of a staff member from another department."""
+        # Request for Eve (Chemistry department)
+        req = EquipmentRequest.objects.create(
+            office=self.office_shared,
+            staff=self.staff_other_faculty,
+            asset_type='chair',
+            category='furniture',
+            quantity=1,
+            reason='Need chair.',
+            status='pending'
+        )
+        # Authenticate as CS dept admin Bob
+        self.client.force_authenticate(user=self.user_dept_admin)
+        response = self.client.patch(f'/api/equipment-requests/{req.id}/', {
+            'status': 'approved'
+        })
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
 

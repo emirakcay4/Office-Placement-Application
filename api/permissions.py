@@ -168,3 +168,28 @@ class IsAssignmentAdminOrReadOnly(BasePermission):
 
         return False
 
+
+class IsEquipmentAdminOrReadOnly(BasePermission):
+    """
+    Grants access to write operations on Equipment:
+      - system_admin, resource_manager, and it_department -> full write access.
+      - Safe methods (GET, HEAD, OPTIONS) are open to any authenticated user.
+    """
+
+    def has_permission(self, request, view):
+        """Allow safe methods for all authenticated users, and write methods for equipment admins."""
+        if not request.user or not request.user.is_authenticated:
+            return False
+
+        if request.method in SAFE_METHODS:
+            return True
+
+        if request.user.is_superuser:
+            return True
+
+        if not hasattr(request.user, 'staff_profile'):
+            return False
+
+        role = request.user.staff_profile.system_role
+        return role in ['system_admin', 'resource_manager', 'it_department']
+

@@ -28,6 +28,10 @@ function onRefreshed(token) {
 // ----------------------------------------------------------------------
 client.interceptors.request.use(
   (config) => {
+    // Skip attaching authorization token if skipAuth config is true
+    if (config.skipAuth) {
+      return config;
+    }
     const token = localStorage.getItem('access_token');
     if (token) {
       config.headers['Authorization'] = `Bearer ${token}`;
@@ -47,6 +51,21 @@ client.interceptors.response.use(
 
     // If error is 401, not a login attempt, and we haven't retried yet
     if (error.response?.status === 401 && !originalRequest._retry && originalRequest.url !== '/auth/login/') {
+      // Self-healing for public endpoints: if a GET request to a public endpoint fails with 401,
+      // it is likely due to an expired/invalid token in localStorage. Retry without the Authorization header.
+      const isPublicEndpoint =
+        originalRequest.method?.toLowerCase() === 'get' &&
+        (originalRequest.url.includes('/offices/search/') || originalRequest.url.match(/\/offices\/\d+\/?$/));
+
+      if (isPublicEndpoint) {
+        originalRequest._retry = true;
+        originalRequest.skipAuth = true;
+        if (originalRequest.headers) {
+          delete originalRequest.headers['Authorization'];
+        }
+        return client(originalRequest);
+      }
+
       if (isRefreshing) {
         // If already refreshing, wait for the new token and retry
         try {

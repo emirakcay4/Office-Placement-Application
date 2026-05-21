@@ -16,7 +16,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework_simplejwt.views import TokenObtainPairView
 
-from .models import Department, Building, Office, Staff, ITEquipment, OfficeAssignment, OfficeRequest
+from .models import Department, Building, Office, Staff, ITEquipment, OfficeAssignment, OfficeRequest, EquipmentRequest
 from .serializers import (
     DepartmentSerializer,
     BuildingSerializer,
@@ -28,8 +28,9 @@ from .serializers import (
     CustomTokenObtainPairSerializer,
     CurrentUserSerializer,
     OfficeRequestSerializer,
+    EquipmentRequestSerializer,
 )
-from .permissions import IsAdminOrReadOnly, IsAssignmentAdminOrReadOnly
+from .permissions import IsAdminOrReadOnly, IsAssignmentAdminOrReadOnly, IsEquipmentAdminOrReadOnly
 
 
 # ──────────────────────────────────────────────────────────────
@@ -204,7 +205,7 @@ class ITEquipmentViewSet(viewsets.ModelViewSet):
 
     queryset = ITEquipment.objects.select_related('office').all()
     serializer_class = ITEquipmentSerializer
-    permission_classes = [IsAdminOrReadOnly]
+    permission_classes = [IsEquipmentAdminOrReadOnly]
 
 
 class OfficeAssignmentViewSet(viewsets.ModelViewSet):
@@ -237,6 +238,42 @@ class OfficeRequestViewSet(viewsets.ModelViewSet):
             return OfficeRequest.objects.filter(staff=user.staff_profile)
 
         return OfficeRequest.objects.none()
+
+    def perform_create(self, serializer):
+        # Automatically attach the authenticated user's staff profile
+        if hasattr(self.request.user, 'staff_profile'):
+            serializer.save(staff=self.request.user.staff_profile)
+        else:
+            from rest_framework.exceptions import ValidationError
+            raise ValidationError("User has no associated staff profile.")
+
+
+class EquipmentRequestViewSet(viewsets.ModelViewSet):
+    """
+    ViewSet for managing Equipment Requests.
+    Allows authenticated users to view, create and manage equipment requests.
+    """
+    serializer_class = EquipmentRequestSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        user = self.request.user
+        if not user or not user.is_authenticated:
+            return EquipmentRequest.objects.none()
+
+        # Admins, resource managers, and IT department see all requests
+        if hasattr(user, 'staff_profile') and user.staff_profile.system_role in ['system_admin', 'resource_manager', 'it_department']:
+            return EquipmentRequest.objects.all()
+
+        # Department Admins see requests within their own department
+        if hasattr(user, 'staff_profile') and user.staff_profile.system_role == 'department_admin':
+            return EquipmentRequest.objects.filter(staff__department=user.staff_profile.department)
+
+        # Faculty / Standard users see only their own requests
+        if hasattr(user, 'staff_profile'):
+            return EquipmentRequest.objects.filter(staff=user.staff_profile)
+
+        return EquipmentRequest.objects.none()
 
     def perform_create(self, serializer):
         # Automatically attach the authenticated user's staff profile

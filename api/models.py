@@ -133,6 +133,9 @@ class ITEquipment(models.Model):
         ('printer', 'Printer'),
         ('phone', 'Phone'),
         ('projector', 'Projector'),
+        ('smartboard', 'Smart Board'),
+        ('chair', 'Chair'),
+        ('desk', 'Desk'),
     ]
 
     STATUS_CHOICES = [
@@ -228,4 +231,65 @@ class OfficeRequest(models.Model):
 
     def __str__(self):
         return f"Request by {self.staff} for {self.office} ({self.status})"
+
+
+class EquipmentRequest(models.Model):
+    """
+    Represents an equipment request submitted by a staff member for a specific office.
+    """
+    ASSET_CATEGORY_CHOICES = [
+        ('it', 'IT / Technology'),
+        ('furniture', 'Furniture / Fixtures'),
+    ]
+    
+    STATUS_CHOICES = [
+        ('pending', 'Pending'),
+        ('approved', 'Approved'),
+        ('rejected', 'Rejected'),
+    ]
+
+    office = models.ForeignKey(
+        Office,
+        on_delete=models.CASCADE,
+        related_name='equipment_requests',
+        help_text='The office/classroom where the equipment is requested.'
+    )
+    staff = models.ForeignKey(
+        Staff,
+        on_delete=models.CASCADE,
+        related_name='equipment_requests',
+        help_text='The staff member who requested the equipment.'
+    )
+    asset_type = models.CharField(
+        max_length=50,
+        help_text='Type of asset: computer, monitor, printer, phone, projector, smartboard, chair, desk, etc.'
+    )
+    category = models.CharField(
+        max_length=20,
+        choices=ASSET_CATEGORY_CHOICES,
+        default='it'
+    )
+    quantity = models.IntegerField(default=1)
+    reason = models.TextField(help_text='Justification/reason for the request.')
+    status = models.CharField(
+        max_length=20,
+        choices=STATUS_CHOICES,
+        default='pending'
+    )
+    rejection_reason = models.TextField(blank=True, default='', help_text='Mandatory explanation if rejected.')
+    serial_number_assigned = models.CharField(
+        max_length=255, 
+        blank=True, 
+        default='', 
+        help_text='Physical serial number assigned during approval (for IT category).'
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'equipment_request'
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f"{self.staff} requests {self.quantity}x {self.asset_type} for {self.office} ({self.status})"
 
