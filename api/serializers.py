@@ -517,12 +517,26 @@ class EquipmentRequestSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError("User has no associated staff profile.")
 
         # Role checks for status / admin-only updates
-        if 'status' in attrs or 'rejection_reason' in attrs or 'serial_number_assigned' in attrs:
-            is_admin = staff and staff.system_role in ['system_admin', 'department_admin', 'resource_manager', 'it_department']
-            if not is_admin and not (user and user.is_superuser):
-                raise serializers.ValidationError("Only administrators can update request status or assign assets.")
+        is_admin = staff and staff.system_role in ['system_admin', 'department_admin', 'resource_manager', 'it_department']
+        has_admin_privilege = is_admin or (user and user.is_superuser)
 
-            # Validate rejection reason if status is being updated to rejected
+        if 'status' in attrs or 'rejection_reason' in attrs or 'serial_number_assigned' in attrs:
+            if self.instance:
+                # Update case: Standard users cannot change status, rejection reason, or serial number
+                status_changed = 'status' in attrs and attrs['status'] != self.instance.status
+                rejection_reason_changed = 'rejection_reason' in attrs and attrs['rejection_reason'] != self.instance.rejection_reason
+                serial_changed = 'serial_number_assigned' in attrs and attrs['serial_number_assigned'] != self.instance.serial_number_assigned
+                
+                if (status_changed or rejection_reason_changed or serial_changed) and not has_admin_privilege:
+                    raise serializers.ValidationError("Only administrators can update request status or assign assets.")
+            else:
+                # Create case: Standard users can only set status to 'pending', and cannot set rejection_reason or serial_number_assigned
+                if 'status' in attrs and attrs['status'] != 'pending' and not has_admin_privilege:
+                    raise serializers.ValidationError({"status": "Standard users can only submit requests in 'pending' status."})
+                if ('rejection_reason' in attrs or 'serial_number_assigned' in attrs) and not has_admin_privilege:
+                    raise serializers.ValidationError("Standard users cannot assign serial numbers or specify rejection reasons on request creation.")
+
+            # Validate rejection reason if status is being updated/set to rejected
             if new_status == 'rejected':
                 if self.instance and not self.instance.rejection_reason and not attrs.get('rejection_reason'):
                     raise serializers.ValidationError({"rejection_reason": "Rejection reason is mandatory when rejecting a request."})

@@ -354,7 +354,12 @@ export default function Equipment() {
       await fetchData();
     } catch (err) {
       console.error("Failed to submit request:", err);
-      setRequestError(err.response?.data?.detail || err.response?.data?.office?.[0] || "Failed to submit request.");
+      setRequestError(
+        err.response?.data?.detail || 
+        err.response?.data?.non_field_errors?.[0] || 
+        err.response?.data?.office?.[0] || 
+        "Failed to submit request."
+      );
     } finally {
       setSubmittingRequest(false);
     }
