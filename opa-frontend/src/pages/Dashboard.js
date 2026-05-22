@@ -310,18 +310,33 @@ export default function Dashboard() {
     transition: 'transform 0.2s ease',
   };
 
-  const kpiData = [
-    { label: 'Total Offices',     value: stats.totalOffices },
-    { label: 'Occupied Offices',  value: stats.occupied     },
-    { label: 'Available Offices', value: stats.available    },
-    { label: 'Pending Conflicts', value: stats.conflicts    },
-  ];
+  const isAdmin = role === 'system_admin' || role === 'department_admin';
 
-  const kpiIcons = [
-    <svg key={0} width="44" height="44" viewBox="0 0 16 16" fill="none"><rect x="1" y="2" width="14" height="12" rx="2" stroke="white" strokeWidth="1.5"/><path d="M1 6h14" stroke="white" strokeWidth="1.5"/></svg>,
-    <svg key={1} width="44" height="44" viewBox="0 0 16 16" fill="none"><path d="M8 1a4 4 0 100 8A4 4 0 008 1zM2 14c0-2.5 2.7-4 6-4s6 1.5 6 4" stroke="#10B981" strokeWidth="1.5" strokeLinecap="round"/></svg>,
-    <svg key={2} width="44" height="44" viewBox="0 0 16 16" fill="none"><path d="M3 8l3.5 3.5L13 4.5" stroke="#8B5CF6" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/></svg>,
-    <svg key={3} width="44" height="44" viewBox="0 0 16 16" fill="none"><path d="M8 2v6m0 3v1" stroke="#EF4444" strokeWidth="1.8" strokeLinecap="round"/><circle cx="8" cy="8" r="6.5" stroke="#EF4444" strokeWidth="1.4"/></svg>,
+  const kpiData = [
+    { 
+      label: 'Total Offices', 
+      value: stats.totalOffices, 
+      cardStyle: t.kpiCards[0], 
+      icon: <svg width="44" height="44" viewBox="0 0 16 16" fill="none"><rect x="1" y="2" width="14" height="12" rx="2" stroke="white" strokeWidth="1.5"/><path d="M1 6h14" stroke="white" strokeWidth="1.5"/></svg> 
+    },
+    { 
+      label: 'Occupied Offices', 
+      value: stats.occupied, 
+      cardStyle: t.kpiCards[1], 
+      icon: <svg width="44" height="44" viewBox="0 0 16 16" fill="none"><path d="M8 1a4 4 0 100 8A4 4 0 008 1zM2 14c0-2.5 2.7-4 6-4s6 1.5 6 4" stroke="#10B981" strokeWidth="1.5" strokeLinecap="round"/></svg> 
+    },
+    { 
+      label: 'Available Offices', 
+      value: stats.available, 
+      cardStyle: t.kpiCards[2], 
+      icon: <svg width="44" height="44" viewBox="0 0 16 16" fill="none"><path d="M3 8l3.5 3.5L13 4.5" stroke="#8B5CF6" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/></svg> 
+    },
+    ...(isAdmin ? [{ 
+      label: 'Pending Conflicts', 
+      value: stats.conflicts, 
+      cardStyle: t.kpiCards[3], 
+      icon: <svg width="44" height="44" viewBox="0 0 16 16" fill="none"><path d="M8 2v6m0 3v1" stroke="#EF4444" strokeWidth="1.8" strokeLinecap="round"/><circle cx="8" cy="8" r="6.5" stroke="#EF4444" strokeWidth="1.4"/></svg> 
+    }] : []),
   ];
 
   const SkeletonRow = () => (
@@ -503,9 +518,9 @@ export default function Dashboard() {
         </div>
 
         {/* KPI cards */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: '14px' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: `repeat(${kpiData.length}, 1fr)`, gap: '14px' }}>
           {kpiData.map((k, i) => {
-            const c = t.kpiCards[i];
+            const c = k.cardStyle;
             return (
               <div
                 key={i}
@@ -521,7 +536,7 @@ export default function Dashboard() {
                 }}
               >
                 <div style={{ position: 'absolute', right: '16px', top: '50%', transform: 'translateY(-50%)', opacity: .12, display: 'flex' }}>
-                  {kpiIcons[i]}
+                  {k.icon}
                 </div>
                 <div style={{ fontSize: '34px', fontWeight: 900, letterSpacing: '-1.5px', lineHeight: 1, marginBottom: '4px', color: c.numColor }}>
                   {loading ? '...' : k.value}
@@ -625,16 +640,16 @@ export default function Dashboard() {
           {/* Right Column Stack: Flagged Offices & Quick Actions */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
             
-            {/* Flagged Offices */}
-            <div style={card}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '18px 22px', borderBottom: `1.5px solid ${t.border}` }}>
-                <h2 style={{ fontSize: '14px', fontWeight: 800, color: t.title, margin: 0, letterSpacing: '-.3px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  Capacity Conflicts
-                  <span style={{ backgroundColor: darkMode ? 'rgba(239,68,68,0.15)' : '#FEE2E2', color: '#EF4444', fontSize: '11px', fontWeight: 800, padding: '2px 8px', borderRadius: '20px' }}>
-                    {loading ? '...' : flaggedOffices.length}
-                  </span>
-                </h2>
-                {(role === 'system_admin' || role === 'department_admin') && (
+            {/* Flagged Offices (Only for Admins who can resolve conflicts) */}
+            {(role === 'system_admin' || role === 'department_admin') && (
+              <div style={card}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '18px 22px', borderBottom: `1.5px solid ${t.border}` }}>
+                  <h2 style={{ fontSize: '14px', fontWeight: 800, color: t.title, margin: 0, letterSpacing: '-.3px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    Capacity Conflicts
+                    <span style={{ backgroundColor: darkMode ? 'rgba(239,68,68,0.15)' : '#FEE2E2', color: '#EF4444', fontSize: '11px', fontWeight: 800, padding: '2px 8px', borderRadius: '20px' }}>
+                      {loading ? '...' : flaggedOffices.length}
+                    </span>
+                  </h2>
                   <button
                     onClick={() => navigate('/admin')}
                     style={{ background: 'none', border: 'none', color: t.accentColor, fontSize: '12px', fontFamily: 'inherit', fontWeight: 800, cursor: 'pointer', padding: '4px 8px', borderRadius: '6px', display: 'flex', alignItems: 'center', gap: '4px' }}
@@ -642,67 +657,67 @@ export default function Dashboard() {
                     Resolve
                     <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M2.5 6h7m-3-3l3 3-3 3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
                   </button>
-                )}
-              </div>
-              <div style={{ padding: '14px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                {loading ? (
-                  <div style={{ padding: '20px', textAlign: 'center', color: t.sub }}>
-                    <div className="skeleton-pulse" style={{ width: '80%', height: '14px', borderRadius: '4px', backgroundColor: darkMode ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)', margin: '0 auto 8px' }} />
-                    <div className="skeleton-pulse" style={{ width: '60%', height: '10px', borderRadius: '3px', backgroundColor: darkMode ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)', margin: '0 auto' }} />
-                  </div>
-                ) : flaggedOffices.length === 0 ? (
-                  <div style={{ padding: '30px 20px', textAlign: 'center', color: t.sub, fontSize: '12px', fontWeight: 600 }}>No capacity conflicts found. All logical rules validated.</div>
-                ) : (
-                  flaggedOffices.map(o => {
-                    const pct = Math.min((o.current / o.capacity) * 100, 100);
-                    return (
-                      <div
-                        key={o.id}
-                        className="flagged-card"
-                        style={{
-                          padding: '14px 16px',
-                          backgroundColor: t.flagBg,
-                          border: `1.5px solid ${t.flagBorder}`,
-                          borderRadius: '12px',
-                          display: 'flex',
-                          flexDirection: 'column',
-                          gap: '10px'
-                        }}
-                      >
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                            <div style={{ position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                              <div style={{ position: 'absolute', width: '8px', height: '8px', borderRadius: '50%', backgroundColor: '#EF4444', animation: 'pulse-glow 2s cubic-bezier(0.45, 0, 0.55, 1) infinite' }} />
-                              <div style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: '#EF4444', zIndex: 1 }} />
+                </div>
+                <div style={{ padding: '14px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                  {loading ? (
+                    <div style={{ padding: '20px', textAlign: 'center', color: t.sub }}>
+                      <div className="skeleton-pulse" style={{ width: '80%', height: '14px', borderRadius: '4px', backgroundColor: darkMode ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)', margin: '0 auto 8px' }} />
+                      <div className="skeleton-pulse" style={{ width: '60%', height: '10px', borderRadius: '3px', backgroundColor: darkMode ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)', margin: '0 auto' }} />
+                    </div>
+                  ) : flaggedOffices.length === 0 ? (
+                    <div style={{ padding: '30px 20px', textAlign: 'center', color: t.sub, fontSize: '12px', fontWeight: 600 }}>No capacity conflicts found. All logical rules validated.</div>
+                  ) : (
+                    flaggedOffices.map(o => {
+                      const pct = Math.min((o.current / o.capacity) * 100, 100);
+                      return (
+                        <div
+                          key={o.id}
+                          className="flagged-card"
+                          style={{
+                            padding: '14px 16px',
+                            backgroundColor: t.flagBg,
+                            border: `1.5px solid ${t.flagBorder}`,
+                            borderRadius: '12px',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            gap: '10px'
+                          }}
+                        >
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                              <div style={{ position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                <div style={{ position: 'absolute', width: '8px', height: '8px', borderRadius: '50%', backgroundColor: '#EF4444', animation: 'pulse-glow 2s cubic-bezier(0.45, 0, 0.55, 1) infinite' }} />
+                                <div style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: '#EF4444', zIndex: 1 }} />
+                              </div>
+                              <div>
+                                <div style={{ fontSize: '14px', fontWeight: 800, color: t.flagTitle }}>Room {o.officeNo}</div>
+                                <div style={{ fontSize: '11px', color: t.flagSub, fontWeight: 600 }}>{o.building}</div>
+                              </div>
                             </div>
-                            <div>
-                              <div style={{ fontSize: '14px', fontWeight: 800, color: t.flagTitle }}>Room {o.officeNo}</div>
-                              <div style={{ fontSize: '11px', color: t.flagSub, fontWeight: 600 }}>{o.building}</div>
+                            <div style={{ textAlign: 'right' }}>
+                              <div style={{ fontSize: '15px', fontWeight: 900, color: '#EF4444', letterSpacing: '-0.5px', lineHeight: 1 }}>
+                                {o.current}<span style={{ fontSize: '11px', fontWeight: 600, color: t.sub }}>/{o.capacity}</span>
+                              </div>
+                              <div style={{ fontSize: '9px', color: t.sub, marginTop: '2px', textTransform: 'uppercase', letterSpacing: '.5px', fontWeight: 700 }}>Seats / Cap</div>
                             </div>
                           </div>
-                          <div style={{ textAlign: 'right' }}>
-                            <div style={{ fontSize: '15px', fontWeight: 900, color: '#EF4444', letterSpacing: '-0.5px', lineHeight: 1 }}>
-                              {o.current}<span style={{ fontSize: '11px', fontWeight: 600, color: t.sub }}>/{o.capacity}</span>
+                          
+                          <div>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px', color: t.sub, marginBottom: '4px', fontWeight: 700 }}>
+                              <span>Capacity Usage</span>
+                              <span style={{ color: '#EF4444' }}>Over Capacity ({Math.round(pct)}%)</span>
                             </div>
-                            <div style={{ fontSize: '9px', color: t.sub, marginTop: '2px', textTransform: 'uppercase', letterSpacing: '.5px', fontWeight: 700 }}>Seats / Cap</div>
+                            <div style={{ width: '100%', height: '6px', backgroundColor: t.flagTrack, borderRadius: '3px', overflow: 'hidden' }}>
+                              <div style={{ height: '100%', width: `${pct}%`, backgroundColor: '#EF4444', borderRadius: '3px' }} />
+                            </div>
                           </div>
                         </div>
-                        
-                        <div>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px', color: t.sub, marginBottom: '4px', fontWeight: 700 }}>
-                            <span>Capacity Usage</span>
-                            <span style={{ color: '#EF4444' }}>Over Capacity ({Math.round(pct)}%)</span>
-                          </div>
-                          <div style={{ width: '100%', height: '6px', backgroundColor: t.flagTrack, borderRadius: '3px', overflow: 'hidden' }}>
-                            <div style={{ height: '100%', width: `${pct}%`, backgroundColor: '#EF4444', borderRadius: '3px' }} />
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })
-                )}
+                      );
+                    })
+                  )}
+                </div>
               </div>
-            </div>
+            )}
 
             {/* Quick Actions Panel */}
             <div style={card}>
